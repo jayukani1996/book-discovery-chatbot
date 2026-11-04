@@ -19,6 +19,13 @@ export interface AgentOptions {
   signal?: AbortSignal;
 }
 
+const DISPLAY_NOTE = "App note: book cards displayed to the user under the previous answer, in order:";
+
+/** Remove any copy of the internal display note that a model may have echoed into its answer. */
+export function stripDisplayNote(text: string): string {
+  return text.replace(/\n*\[?(?:App note: book cards displayed|Books displayed to the user)[^\n]*\]?\s*$/i, "").trimEnd();
+}
+
 /** Turn the client conversation into model messages, annotated with what the user saw. */
 export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): ChatCompletionMessageParam[] {
   const history = body.messages.slice(-MAX_HISTORY);
@@ -40,17 +47,20 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
     if (m.role === "user") {
       msgs.push({ role: "user", content: String(m.content).slice(0, 4000) });
     } else {
-      let content = m.content || "(no text)";
+      msgs.push({ role: "assistant", content: stripDisplayNote(m.content) || "(no text)" });
       const shown = (m.bookIds ?? []).map((id) => registry.get(id)).filter((s): s is BookSource => !!s);
+      // Sent as a separate app note (not part of the assistant's words) so the model
+      // resolves "the second result" against what the user actually saw, without imitating it.
       if (shown.length) {
-        content +=
-          "\n\n[Books displayed to the user, in order: " +
-          shown
-            .map((s, i) => `${i + 1}. ${s.id} "${s.title}" — ${s.authors.join(", ") || "unknown author"}${s.firstPublishYear ? ` (${s.firstPublishYear})` : ""}, cover: ${s.coverId ? "yes" : "no"}`)
-            .join("; ") +
-          "]";
+        msgs.push({
+          role: "system",
+          content:
+            `${DISPLAY_NOTE} ` +
+            shown
+              .map((s, i) => `${i + 1}. ${s.id} "${s.title}" — ${s.authors.join(", ") || "unknown author"}${s.firstPublishYear ? ` (${s.firstPublishYear})` : ""}, cover: ${s.coverId ? "yes" : "no"}`)
+              .join("; "),
+        });
       }
-      msgs.push({ role: "assistant", content });
     }
   }
   return msgs;
@@ -75,6 +85,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
       { signal },
     );
 
+    const answerBeforeRound = answer;
     let roundText = "";
     const calls = new Map<number, { id: string; name: string; args: string }>();
 
@@ -101,6 +112,13 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
     }
 
     if (!calls.size) break; // final answer produced
+
+    // The model wrote a preamble and then decided it needs more data. Drop that text so the
+    // final answer isn't duplicated (it will be rewritten once the data is in).
+    if (roundText.trim() && [...calls.values()].some((c) => c.name !== "show_books")) {
+      answer = answerBeforeRound;
+      emit({ type: "reset", content: answer });
+    }
 
     const toolCalls: ChatCompletionMessageFunctionToolCall[] = [...calls.values()].map((c) => ({
       id: c.id,
@@ -139,7 +157,9 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
     const msg = "Sorry — I couldn't produce an answer for that. Please try rephrasing.";
     emit({ type: "text", delta: msg });
   }
-  if (ctx.shownIds) emit({ type: "books", ids: ctx.shownIds });
+  // If the model forgot show_books, show cards for the records it cited, in citation order.
+  const shownIds = ctx.shownIds ?? extractCitationIds(answer).filter((id) => registry.has(id));
+  if (shownIds.length) emit({ type: "books", ids: shownIds });
 }
 
 /** Map provider errors to messages a user can act on. */

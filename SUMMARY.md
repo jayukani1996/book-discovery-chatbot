@@ -13,6 +13,9 @@
 ## Tradeoff worth discussing
 I chose **Open Library search plus on-demand detail fetches** over pre-indexing a vector store. The upside: it's always current, there's no infrastructure, and every claim traces to a live record. The downside: search relevance depends on Open Library's ranking. For example, the "artificial intelligence" subject returns some academic titles. The model has to pick from what comes back and can't do a semantic search over the whole catalogue. A second tradeoff: conversation state (transcript plus registry) lives in the client, which keeps the server stateless and easy to deploy. Before production I'd move it server-side so a client can't tamper with source records.
 
+## Model choice
+I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` sometimes grouped all citations at the end, skipped the recommendation label, or leaked tool JSON into the answer. `gpt-4.1` answered some factual questions without citations. `gpt-5.4-mini` cited every factual answer inline and labeled every recommendation, at 2–7 s per answer, so it is the default. If a key can't access it, the server falls back to `gpt-4.1-mini` automatically. I also added code-level guardrails so correctness doesn't rest on the prompt alone: preamble text is discarded before more tool calls, cards fall back to cited records, and invented ids are dropped.
+
 ## What I'd improve with more time / before production
 - **Automatic grounding check.** A post-answer verifier that confirms each cited sentence's numbers and names appear in the cited record, flagging or regenerating when they don't.
 - Server-side sessions (Redis/Postgres), auth, rate limiting per user, and a shared cache for Open Library responses.
@@ -31,4 +34,4 @@ I chose **Open Library search plus on-demand detail fetches** over pre-indexing 
 ~X hours *(fill in)*
 
 ## AI tools used
-Claude Code (Anthropic) for scaffolding, implementation, tests and documentation. I reviewed and directed the architecture, prompts and UX decisions, and tested the scenarios manually against the live APIs.
+Claude Code (Anthropic) for scaffolding, implementation, tests and documentation. I reviewed and directed the architecture, prompts and UX decisions. I tested the scenarios against the live APIs with a small script that drives `/api/chat` like the browser does, and used the transcripts to fix real issues: bunched citations, duplicated answers, a filter applied to the wrong list, missing recommendation labels, and Open Library's search and work records disagreeing on first-publication years.

@@ -7,6 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Chosen after running the required scenarios against several models (best citation/label adherence). */
+const DEFAULT_MODEL = "gpt-5.4-mini";
+/** Used automatically if the key has no access to the configured model. */
+const FALLBACK_MODEL = "gpt-4.1-mini";
+
 const BodySchema = z.object({
   messages: z
     .array(
@@ -44,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 2, timeout: 45_000 });
-  const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -56,8 +61,21 @@ export async function POST(req: Request) {
           /* client disconnected */
         }
       };
+      let emitted = false;
+      const tracked = (e: StreamEvent) => {
+        emitted = true;
+        emit(e);
+      };
       try {
-        await runAgent({ openai, model, body, emit, signal: req.signal });
+        try {
+          await runAgent({ openai, model, body, emit: tracked, signal: req.signal });
+        } catch (err) {
+          const e = err as { status?: number; code?: string };
+          const modelMissing = e?.status === 404 || e?.code === "model_not_found";
+          if (!modelMissing || emitted || model === FALLBACK_MODEL) throw err;
+          console.warn(`[api/chat] model "${model}" unavailable, falling back to ${FALLBACK_MODEL}`);
+          await runAgent({ openai, model: FALLBACK_MODEL, body, emit, signal: req.signal });
+        }
       } catch (err) {
         console.error("[api/chat]", err);
         emit({ type: "error", message: friendlyError(err) });

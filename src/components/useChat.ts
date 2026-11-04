@@ -97,6 +97,9 @@ export function useChat() {
             setStatus(null);
             patch((m) => ({ ...m, content: m.content + e.delta }));
             break;
+          case "reset":
+            patch((m) => ({ ...m, content: e.content }));
+            break;
           case "books":
             patch((m) => ({ ...m, bookIds: e.ids }));
             break;

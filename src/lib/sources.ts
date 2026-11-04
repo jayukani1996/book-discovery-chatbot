@@ -1,5 +1,6 @@
 import type { BookSource } from "./types";
 import { workUrl, type OLSearchHit, type OLWorkDetails } from "./openlibrary";
+import { consistentPublishDate } from "./format";
 
 /**
  * Conversation-scoped registry of every book record the agent has retrieved.
@@ -104,7 +105,7 @@ export function sourceForModel(s: BookSource, opts: { full?: boolean } = {}) {
     title: s.subtitle ? `${s.title}: ${s.subtitle}` : s.title,
     authors: s.authors.length ? s.authors : undefined,
     first_publish_year: s.firstPublishYear,
-    first_publish_date: s.firstPublishDate,
+    first_publish_date: s.firstPublishDate ? consistentPublishDate(s) : undefined,
     has_cover: !!s.coverId,
     edition_count: s.editionCount,
     median_pages: s.pageCount,

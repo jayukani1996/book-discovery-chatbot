@@ -22,7 +22,8 @@ export interface CitationResult {
 export function processCitations(text: string, isKnown: (id: string) => boolean, opts: { streaming?: boolean } = {}): CitationResult {
   const order: string[] = [];
   const invalid: string[] = [];
-  let src = text;
+  // Never render an echoed internal display note.
+  let src = text.replace(/\n*\[?(?:App note: book cards displayed|Books displayed to the user)[^\n]*\]?\s*$/i, "");
   if (opts.streaming) src = src.replace(PARTIAL_TAIL_RE, "");
 
   const markdown = src.replace(CITE_RE, (_m, group: string) => {

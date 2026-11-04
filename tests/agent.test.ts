@@ -91,7 +91,7 @@ describe("runAgent", () => {
       sources,
     };
     const msgs = buildMessages(body, new SourceRegistry(sources));
-    const assistant = msgs.find((m) => m.role === "assistant") as { content: string };
+    const assistant = msgs.find((m) => m.role === "system" && String(m.content).startsWith("App note")) as { content: string };
     expect(assistant.content).toContain('2. S2 "Harry Potter and the Chamber of Secrets"');
     expect(assistant.content).toContain("cover: no"); // The Casual Vacancy (supports the cover filter)
 
@@ -159,5 +159,40 @@ describe("friendlyError", () => {
     expect(friendlyError({ status: 401 })).toMatch(/API key/);
     expect(friendlyError({ status: 429 })).toMatch(/rate-limited/);
     expect(friendlyError({ status: 404 })).toMatch(/OPENAI_MODEL/);
+  });
+});
+
+describe("guardrails", () => {
+  it("discards a preamble written before more tool calls (no duplicated answer)", async () => {
+    const r = await run(
+      [
+        { text: "Kindred was written by someone.", calls: [{ name: "search_books", args: { title: "Kindred" } }] },
+        { text: "Kindred was written by Octavia E. Butler [S1]." },
+      ],
+      { messages: [user("Who wrote Kindred?")], sources: {} },
+      mockFetch({ "search.json": kindredSearch, "works/": kindredWork }),
+    );
+    const resetAt = r.events.findIndex((e) => e.type === "reset");
+    expect(resetAt).toBeGreaterThan(-1);
+    const finalText = r.events
+      .slice(resetAt + 1)
+      .filter((e) => e.type === "text")
+      .map((e) => (e as { delta: string }).delta)
+      .join("");
+    expect(finalText).toBe("Kindred was written by Octavia E. Butler [S1].");
+  });
+
+  it("falls back to cards for cited records when show_books is never called", async () => {
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: { title: "Kindred" } }] }, { text: "Kindred was written by Octavia E. Butler [S1]." }],
+      { messages: [user("Who wrote Kindred?")], sources: {} },
+      mockFetch({ "search.json": kindredSearch }),
+    );
+    expect(r.books).toEqual(["S1"]);
+  });
+
+  it("strips an echoed internal display note", async () => {
+    const { stripDisplayNote } = await import("@/lib/agent");
+    expect(stripDisplayNote("Here you go [S1].\n\n[Books displayed to the user, in order: S1, S2]")).toBe("Here you go [S1].");
   });
 });

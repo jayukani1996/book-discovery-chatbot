@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BookSource } from "@/lib/types";
 import { BookCover } from "./BookCover";
+import { consistentPublishDate } from "@/lib/format";
 
 const W = 300;
 
@@ -64,7 +65,7 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
   if (!source) return null;
 
   const authors = source.authors.length ? source.authors.join(", ") : "Not listed";
-  const published = source.firstPublishDate ?? (source.firstPublishYear ? String(source.firstPublishYear) : "Not listed");
+  const published = consistentPublishDate(source) ?? "Not listed";
 
   return (
     <>

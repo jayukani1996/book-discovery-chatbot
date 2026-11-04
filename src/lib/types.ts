@@ -48,6 +48,8 @@ export type StreamEvent =
   | { type: "status"; message: string }
   | { type: "sources"; sources: BookSource[] }
   | { type: "text"; delta: string }
+  /** Replace the streamed text so far (a preamble written before more tool calls is discarded). */
+  | { type: "reset"; content: string }
   | { type: "books"; ids: string[] }
   | { type: "error"; message: string }
   | { type: "done" };

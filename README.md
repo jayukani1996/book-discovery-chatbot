@@ -8,7 +8,7 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 
 ## Run locally
 
-Requires **Node.js 18.18+** (20+ recommended).
+Requires **Node.js 20.9+** (Next.js 16 requirement; an `.nvmrc` is included, so `nvm use` works).
 
 ```bash
 git clone <repo-url> && cd book-discovery-chat
@@ -20,7 +20,7 @@ npm run dev                       # http://localhost:3000
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `OPENAI_API_KEY` | yes | — | Server-side only; never sent to the browser. |
-| `OPENAI_MODEL` | no | `gpt-4.1-mini` | Any Chat Completions model with tool calling (e.g. `gpt-4o-mini`, `gpt-4.1`, `gpt-4o`). |
+| `OPENAI_MODEL` | no | `gpt-5.4-mini` | Any Chat Completions model with tool calling. If the key can't access the configured model, the app falls back to `gpt-4.1-mini` automatically. |
 
 Other scripts:
 
@@ -51,9 +51,10 @@ messages + source registry  ──POST──▶   agent loop (max 6 rounds)
 1. **Tools, not memory.** The model has three tools: `search_books` (author/title/subject/free-text, sort, cover filter), `get_book_details` (description, subjects, first-publication date) and `show_books` (which cards to render, in order). The system prompt forbids stating any title/author/date/fact that didn't come from a tool result.
 2. **Source registry.** Every Open Library work retrieved gets a stable conversation-scoped id (`S1`, `S2`…), deduplicated by work key. The model cites ids like `[S3]`; it never writes URLs — links are built server-side from the work key.
 3. **Citation rendering.** The client renumbers ids per message (`[1]`, `[2]`…) in order of appearance, drops any id that isn't in the registry (so an invented source can't render), and shows a popover with source name, title, author, first-published date, editions, a description snippet and a **View source ↗** link.
-4. **Follow-ups.** The client keeps the transcript and the registry (persisted in `localStorage`). Each prior assistant turn is replayed to the model with an annotation of the exact cards the user saw — `Books displayed: 1. S4 "…" — author (year), cover: yes` — so "the second result", "the author of the first one" and "only ones with covers" resolve deterministically.
+4. **Follow-ups.** The client keeps the transcript and the registry (persisted in `localStorage`). Each prior assistant turn is replayed to the model followed by a separate app note listing the exact cards the user saw — `1. S4 "…" — author (year), cover: yes` — so "the second result", "the author of the first one" and "only ones with covers" resolve against what was on screen. (It is a separate system note rather than appended text, so the model doesn't copy it into answers.)
 5. **Facts vs opinions.** Recommendations go under **Recommendation (AI suggestion):** and state what they're based on ("based on the Open Library descriptions — not a ranking by sales or reviews"). Questions the data can't answer (sales, ratings, prices) get an explicit "I don't have enough information from the available Open Library data…".
-6. **Reliability.** Open Library calls have a 9 s timeout, one retry and a 10-minute in-memory cache; failures are returned to the model as tool errors so it tells the user instead of guessing. OpenAI errors (bad key, quota, model not found, network) map to readable messages with a **Try again** button. Cards/popovers render cleanly with missing covers, authors, years or descriptions.
+6. **Guardrails in code, not just the prompt.** If the model writes a preamble and then decides to call more tools, that text is discarded (a `reset` stream event) so answers are never duplicated. If it forgets `show_books`, the cards fall back to the records it cited. An echoed internal note is stripped before rendering.
+7. **Reliability.** Open Library calls have a 9 s timeout, one retry and a 10-minute in-memory cache; failures are returned to the model as tool errors so it tells the user instead of guessing. OpenAI errors (bad key, quota, model not found, network) map to readable messages with a **Try again** button. Cards/popovers render cleanly with missing covers, authors, years or descriptions.
 
 ### Project layout
 
@@ -75,12 +76,14 @@ tests/                     Vitest: citations, Open Library client, agent loop (f
 | Scenario | What happens |
 |---|---|
 | *Find books by J.K. Rowling.* | `search_books(author, sort=editions)` → cards + cited summary |
-| *Find introductory books about artificial intelligence.* | subject search → details for top hits → cited list, "introductory" judgment labeled as AI suggestion |
+| *Find introductory books about artificial intelligence.* | free-text search ("introduction to artificial intelligence") → details for top hits → cited list, "introductory" judgment labeled as AI suggestion |
 | *Who wrote Kindred and when was it first published?* | title search (+ details) → "Octavia E. Butler … 1979 [1]" |
-| *Only show books with cover images.* | filters the last displayed list via `has_cover`, re-renders cards, says how many were removed |
+| *Only show books with cover images.* | filters the last multi-book result list via `has_cover`, re-renders cards, says how many were removed (or that all already have covers) |
 | *Tell me more about the second result.* | resolves #2 from the displayed list → `get_book_details` → description/subjects with citations |
 | *Recommend three books about startups for a beginner.* | search + details → three cards, recommendation section clearly labeled |
-| *Which of these books sold the most copies last year?* | states the data doesn't include sales; offers what it does have (e.g. edition counts, clearly not sales) |
+| *Which of these books sold the most copies last year?* | "I don't have enough information from the available Open Library data to determine…"; offers what the data does contain |
+
+All scenarios above, plus the other example questions from the brief ("Show me more books by the author of the second result", "Tell me more about the first book", "Which of these would be best for a beginner?", "When was The Left Hand of Darkness first published?"), were run end-to-end against the live OpenAI API and Open Library. I also checked that no answer cited an unknown id or contained a model-written URL, that citations sat inline, and that recommendations carried the label. `gpt-5.4-mini` was picked as the default after comparing it with `gpt-4.1-mini` and `gpt-4.1` on this run. The smaller/older models sometimes skipped citations or the recommendation label.
 
 ## Security notes
 - The API key lives only in server env vars; `.env*` is git-ignored.
