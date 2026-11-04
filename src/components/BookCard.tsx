@@ -7,7 +7,11 @@ export function BookCard({ book, index, onAsk }: { book: BookSource; index: numb
   const authors = book.authors.length ? book.authors.slice(0, 2).join(", ") + (book.authors.length > 2 ? " et al." : "") : "Unknown author";
   const year = book.firstPublishYear ?? (book.firstPublishDate ? book.firstPublishDate : undefined);
   const blurb = book.description;
-  const subjects = (book.subjects ?? []).filter((s) => s.length < 32).slice(0, 3);
+  // Skip Open Library's machine tags ("series:Harry_Potter", "nyt:...=2008-01-01") and very long subjects.
+  const subjects = (book.subjects ?? [])
+    .filter((s) => s.length < 32 && !/[:=]/.test(s))
+    .map((s) => s.replace(/_/g, " "))
+    .slice(0, 3);
 
   return (
     <article className="fade-up group flex w-full gap-3 rounded-xl border border-line bg-white/70 p-3 transition hover:border-ink-3/40 hover:bg-white">
