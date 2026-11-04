@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import type OpenAI from "openai";
+import { buildMessages, runAgent, friendlyError } from "@/lib/agent";
+import { clearOpenLibraryCache } from "@/lib/openlibrary";
+import { SourceRegistry } from "@/lib/sources";
+import type { BookSource, ChatRequestBody, StreamEvent } from "@/lib/types";
+import { kindredSearch, kindredWork, mockFetch, rowlingSearch } from "./fixtures";
+
+beforeEach(() => clearOpenLibraryCache());
+
+type Step = { text?: string; calls?: { name: string; args: unknown }[] };
+
+/** Fake OpenAI client that streams a scripted sequence of model turns and records requests. */
+function fakeOpenAI(steps: Step[]) {
+  const requests: { messages: unknown[]; tool_choice?: unknown }[] = [];
+  let i = 0;
+  const client = {
+    chat: {
+      completions: {
+        create: async (body: { messages: unknown[]; tool_choice?: unknown }) => {
+          requests.push(JSON.parse(JSON.stringify(body)));
+          const step = steps[i++] ?? { text: "" };
+          async function* gen() {
+            if (step.text) for (const piece of step.text.match(/.{1,12}/gs) ?? []) yield { choices: [{ delta: { content: piece } }] };
+            for (const [idx, c] of (step.calls ?? []).entries()) {
+              const args = JSON.stringify(c.args);
+              yield { choices: [{ delta: { tool_calls: [{ index: idx, id: `call_${i}_${idx}`, function: { name: c.name, arguments: args.slice(0, 5) } }] } }] };
+              yield { choices: [{ delta: { tool_calls: [{ index: idx, function: { arguments: args.slice(5) } }] } }] };
+            }
+          }
+          return gen();
+        },
+      },
+    },
+  };
+  return { client: client as unknown as OpenAI, requests };
+}
+
+async function run(steps: Step[], body: ChatRequestBody, fetchImpl: typeof fetch) {
+  const { client, requests } = fakeOpenAI(steps);
+  const events: StreamEvent[] = [];
+  await runAgent({ openai: client, model: "test", body, emit: (e) => events.push(e), fetchImpl });
+  const text = events.filter((e) => e.type === "text").map((e) => (e as { delta: string }).delta).join("");
+  const sources = Object.fromEntries(events.flatMap((e) => (e.type === "sources" ? e.sources : [])).map((s) => [s.id, s]));
+  const books = (events.filter((e) => e.type === "books").pop() as { ids: string[] } | undefined)?.ids;
+  return { events, text, sources, books, requests };
+}
+
+const user = (content: string) => ({ role: "user" as const, content });
+
+describe("runAgent", () => {
+  it("search by author: runs the tool, streams cited text and shows cards", async () => {
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { author: "J.K. Rowling", sort: "editions" } }] },
+        { calls: [{ name: "show_books", args: { ids: ["S1", "S2", "S3", "S42"] } }] },
+        { text: "Here are books by J. K. Rowling [S1]. The first was published in 1997 [S1]." },
+      ],
+      { messages: [user("Find books by J.K. Rowling.")], sources: {} },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    expect(r.events.find((e) => e.type === "status")).toMatchObject({ message: expect.stringContaining("books by J.K. Rowling") });
+    expect(Object.keys(r.sources)).toEqual(["S1", "S2", "S3"]);
+    expect(r.sources.S1.url).toBe("https://openlibrary.org/works/OL82563W");
+    expect(r.books).toEqual(["S1", "S2", "S3"]); // unknown S42 ignored
+    expect(r.text).toContain("[S1]");
+    // the tool result fed back to the model contains only Open Library data
+    const toolMsg = (r.requests[1].messages as { role: string; content: string }[]).find((m) => m.role === "tool")!;
+    expect(JSON.parse(toolMsg.content).results[0]).toMatchObject({ id: "S1", first_publish_year: 1997, has_cover: true });
+  });
+
+  it("follow-up: previous results keep their ids and the model sees what was displayed", async () => {
+    const prior = new SourceRegistry();
+    for (const d of rowlingSearch.docs.slice(0, 3)) {
+      prior.upsertFromSearch({
+        workKey: d.key,
+        title: d.title!,
+        authors: d.author_name!,
+        authorKeys: [],
+        firstPublishYear: d.first_publish_year,
+        coverId: d.cover_i,
+      });
+    }
+    const sources = Object.fromEntries(prior.all().map((s) => [s.id, s])) as Record<string, BookSource>;
+    const body: ChatRequestBody = {
+      messages: [
+        user("Find books by J.K. Rowling."),
+        { role: "assistant", content: "Here are some [S1].", bookIds: ["S1", "S2", "S3"] },
+        user("Tell me more about the second result."),
+      ],
+      sources,
+    };
+    const msgs = buildMessages(body, new SourceRegistry(sources));
+    const assistant = msgs.find((m) => m.role === "assistant") as { content: string };
+    expect(assistant.content).toContain('2. S2 "Harry Potter and the Chamber of Secrets"');
+    expect(assistant.content).toContain("cover: no"); // The Casual Vacancy (supports the cover filter)
+
+    const r = await run(
+      [
+        { calls: [{ name: "get_book_details", args: { ids: ["S2"] } }] },
+        { text: "Chamber of Secrets was first published in 1998 [S2]." },
+      ],
+      body,
+      mockFetch({ "/works/OL82537W.json": { title: "x", subjects: ["Magic"], first_publish_date: "1998" } }),
+    );
+    expect(r.sources.S2.detailsFetched).toBe(true);
+    expect(r.sources.S2.firstPublishDate).toBe("1998");
+  });
+
+  it("new search results continue the id sequence and dedupe by work", async () => {
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: { title: "Kindred" } }] }, { text: "Kindred [S4]" }],
+      {
+        messages: [user("Who wrote Kindred?")],
+        sources: {
+          S3: { id: "S3", workKey: "/works/OLX", title: "Old", authors: [], authorKeys: [], url: "u", sourceName: "Open Library" },
+        },
+      },
+      mockFetch({ "search.json": kindredSearch, "/works/OL1914022W.json": kindredWork }),
+    );
+    expect(Object.keys(r.sources)).toEqual(["S4"]);
+  });
+
+  it("tells the model when Open Library fails instead of throwing", async () => {
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: { query: "startups" } }] }, { text: "I couldn't reach Open Library right now." }],
+      { messages: [user("Recommend startup books")], sources: {} },
+      mockFetch({ "search.json": () => new Response("down", { status: 503 }) }),
+    );
+    const toolMsg = (r.requests[1].messages as { role: string; content: string }[]).find((m) => m.role === "tool")!;
+    expect(JSON.parse(toolMsg.content).error).toMatch(/unavailable/);
+    expect(r.text).toContain("couldn't reach");
+  });
+
+  it("stops when the answer text and show_books arrive in the same turn (no duplicate answer)", async () => {
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { author: "Rowling" } }] },
+        { text: "Here they are [S1].", calls: [{ name: "show_books", args: { ids: ["S1"] } }] },
+        { text: "DUPLICATE" },
+      ],
+      { messages: [user("Rowling books")], sources: {} },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    expect(r.text).toBe("Here they are [S1].");
+    expect(r.books).toEqual(["S1"]);
+  });
+
+  it("forces a final answer after too many tool rounds", async () => {
+    const loop = Array.from({ length: 5 }, () => ({ calls: [{ name: "search_books", args: { query: "ai" } }] }));
+    const r = await run([...loop, { text: "Done." }], { messages: [user("ai books")], sources: {} }, mockFetch({ "search.json": rowlingSearch }));
+    expect(r.requests.at(-1)!.tool_choice).toBe("none");
+    expect(r.text).toBe("Done.");
+  });
+});
+
+describe("friendlyError", () => {
+  it("maps provider errors to actionable messages", () => {
+    expect(friendlyError({ status: 401 })).toMatch(/API key/);
+    expect(friendlyError({ status: 429 })).toMatch(/rate-limited/);
+    expect(friendlyError({ status: 404 })).toMatch(/OPENAI_MODEL/);
+  });
+});
