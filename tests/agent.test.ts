@@ -172,6 +172,71 @@ describe("friendlyError", () => {
 });
 
 describe("guardrails", () => {
+  it("replaces an improvised answer with the error card when Open Library is down", async () => {
+    const down = (async () => new Response("down", { status: 503 })) as unknown as typeof fetch;
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: { title: "Kindred" } }] }, { text: "Sorry, I can't reach the catalog." }],
+      { messages: [user("Who wrote Kindred?")], sources: {} },
+      down,
+    );
+    const reset = r.events.filter((e) => e.type === "reset").pop() as { content: string };
+    expect(reset.content).toBe("");
+    expect(r.events.find((e) => e.type === "error")).toMatchObject({ message: expect.stringContaining("couldn't reach Open Library") });
+    expect(r.books).toBeUndefined();
+  });
+
+  it("re-shows the covered books if the model forgets the cards on a cover filter", async () => {
+    const reg = new SourceRegistry();
+    for (const d of rowlingSearch.docs.slice(0, 3)) {
+      reg.upsertFromSearch({ workKey: d.key, title: d.title!, authors: d.author_name!, authorKeys: [], coverId: d.cover_i });
+    }
+    const sources = Object.fromEntries(reg.all().map((s) => [s.id, s]));
+    const r = await run(
+      [{ text: "All of those already have cover images." }],
+      {
+        messages: [
+          user("Find books by J.K. Rowling."),
+          { role: "assistant", content: "Here are some.", bookIds: ["S1", "S2", "S3"] },
+          user("Only show me books with cover images."),
+        ],
+        sources,
+      },
+      mockFetch({}),
+    );
+    const expected = reg.all().filter((s) => s.coverId).map((s) => s.id);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(r.books).toEqual(expected);
+  });
+
+  it("a search with no terms is not mistaken for an outage", async () => {
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: {} }] }, { text: "I don't have a results list yet. What should I search for?" }],
+      { messages: [user("Tell me more about the second result.")], sources: {} },
+      mockFetch({}),
+    );
+    expect(r.events.some((e) => e.type === "error")).toBe(false);
+    expect(r.text).toContain("What should I search for?");
+  });
+
+  it("keeps an answer citing real records even if a later lookup failed", async () => {
+    let n = 0;
+    const flaky = (async (u: string) => {
+      if (String(u).includes("search.json") && n++ === 0) return new Response(JSON.stringify(kindredSearch), { status: 200 });
+      return new Response("down", { status: 503 });
+    }) as unknown as typeof fetch;
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { title: "Kindred" } }] },
+        { calls: [{ name: "get_book_details", args: { ids: ["S1"] } }] },
+        { text: "Kindred was written by Octavia E. Butler [S1]." },
+      ],
+      { messages: [user("Who wrote Kindred?")], sources: {} },
+      flaky,
+    );
+    expect(r.events.some((e) => e.type === "error")).toBe(false);
+    expect(r.text).toContain("Octavia E. Butler");
+  });
+
   it("discards a preamble written before more tool calls (no duplicated answer)", async () => {
     const r = await run(
       [
@@ -198,6 +263,12 @@ describe("guardrails", () => {
       mockFetch({ "search.json": kindredSearch }),
     );
     expect(r.books).toEqual(["S1"]);
+  });
+
+  it("removes a line the model repeated verbatim, and nothing else", async () => {
+    const { dropRepeatedLines } = await import("@/lib/agent");
+    expect(dropRepeatedLines("Only books.\nOnly books.")).toBe("Only books.");
+    expect(dropRepeatedLines("- A [S1]\n\n- B [S2]\n\n- A [S1]")).toBe("- A [S1]\n\n- B [S2]\n\n- A [S1]");
   });
 
   it("strips an echoed internal display note", async () => {

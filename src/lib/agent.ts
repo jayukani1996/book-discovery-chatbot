@@ -19,11 +19,36 @@ export interface AgentOptions {
   signal?: AbortSignal;
 }
 
+export const SOURCE_DOWN_MESSAGE = "I couldn't reach Open Library, so I can't answer from real book data right now. Please try again in a minute.";
+
 const DISPLAY_NOTE = "App note: book cards displayed to the user under the previous answer, in order:";
 
 /** Remove any copy of the internal display note that a model may have echoed into its answer. */
 export function stripDisplayNote(text: string): string {
   return text.replace(/\n*\[?(?:App note: book cards displayed|Books displayed to the user)[^\n]*\]?\s*$/i, "").trimEnd();
+}
+
+/** If the user asked to filter by covers, the covered books from the most recent multi-book list. */
+export function coverFilterFallback(body: ChatRequestBody, registry: SourceRegistry): string[] {
+  const asked = body.messages[body.messages.length - 1]?.content ?? "";
+  if (!/\b(with|have|has|having|only)\b.*\bcovers?\b/i.test(asked)) return [];
+  const list = [...body.messages].reverse().find((m) => m.role === "assistant" && (m.bookIds?.length ?? 0) > 1);
+  return (list?.bookIds ?? []).filter((id) => registry.get(id)?.coverId);
+}
+
+/** Remove a non-empty line that exactly repeats the previous non-empty line. */
+export function dropRepeatedLines(text: string): string {
+  let last = "";
+  return text
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      const repeated = t === last;
+      last = t;
+      return !repeated;
+    })
+    .join("\n");
 }
 
 /** Turn the client conversation into model messages, annotated with what the user saw. */
@@ -153,12 +178,29 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
   const invalid = extractCitationIds(answer).filter((id) => !registry.has(id));
   if (invalid.length) console.warn(`[agent] model cited unknown ids: ${invalid.join(", ")}`);
 
+  // Models occasionally repeat a line verbatim; never show that.
+  const cleaned = dropRepeatedLines(answer);
+  if (cleaned !== answer) {
+    answer = cleaned;
+    emit({ type: "reset", content: answer });
+  }
+
+  // Open Library failed and the answer has no sourced facts: show the app's own error card with
+  // "Try again" instead of whatever the model improvised. Answers citing real records are kept.
+  if (ctx.sourceFailed && !extractCitationIds(answer).some((id) => registry.has(id))) {
+    emit({ type: "reset", content: "" });
+    emit({ type: "error", message: SOURCE_DOWN_MESSAGE });
+    return;
+  }
+
   if (!answer.trim()) {
     const msg = "Sorry — I couldn't produce an answer for that. Please try rephrasing.";
     emit({ type: "text", delta: msg });
   }
   // If the model forgot show_books, show cards for the records it cited, in citation order.
-  const shownIds = ctx.shownIds ?? extractCitationIds(answer).filter((id) => registry.has(id));
+  let shownIds = ctx.shownIds ?? extractCitationIds(answer).filter((id) => registry.has(id));
+  // Same safety net for the cover filter: re-show the last result list, minus books without covers.
+  if (!shownIds.length && !ctx.shownIds) shownIds = coverFilterFallback(body, registry);
   if (shownIds.length) emit({ type: "books", ids: shownIds });
 }
 

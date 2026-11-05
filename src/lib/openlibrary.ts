@@ -19,6 +19,8 @@ const CACHE_MAX = 300;
 const RETRY_DELAY_MS = 600;
 
 export class OpenLibraryError extends Error {}
+/** Open Library itself couldn't be reached or is limiting us (as opposed to a bad request or a missing record). */
+export class OpenLibraryUnavailableError extends OpenLibraryError {}
 
 const cache = new Map<string, { at: number; data: unknown }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +44,7 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
       // Open Library's anti-bot / rate-limit responses: a redirect to its "verify human" page, or 429.
       const location = res.headers.get("location") ?? "";
       if (res.status === 429 || /verify_human/.test(location)) {
-        throw new OpenLibraryError("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
+        throw new OpenLibraryUnavailableError("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
       }
       if (res.status >= 300 && res.status < 400) {
         // Ordinary redirects (e.g. merged works) are followed, but only within Open Library.
@@ -64,7 +66,7 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
     }
   }
   const msg = lastErr instanceof Error && lastErr.name === "AbortError" ? "request timed out" : String((lastErr as Error)?.message ?? lastErr);
-  throw new OpenLibraryError(`Open Library is unavailable right now (${msg}).`);
+  throw new OpenLibraryUnavailableError(`Open Library is unavailable right now (${msg}).`);
 }
 
 /** Exposed for tests. */

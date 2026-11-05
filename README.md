@@ -29,7 +29,7 @@ npm run dev                       # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test          # 34 unit + agent-loop tests (no network, no API key needed)
+npm test          # 39 unit + agent-loop tests (no network, no API key needed)
 npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
@@ -58,7 +58,7 @@ messages + source registry  ──POST──▶   agent loop (max 6 rounds)
 3. **Citation rendering.** The client renumbers ids per message (`[1]`, `[2]`…) in order of appearance, drops any id that isn't in the registry (so an invented source can't render), and shows a popover with source name, title, author, first-published date, editions, a description snippet and a **View source ↗** link.
 4. **Follow-ups.** The client keeps the transcript and the registry (persisted in `localStorage`). Each prior assistant turn is replayed to the model followed by a separate app note listing the exact cards the user saw — `1. S4 "…" — author (year), cover: yes` — so "the second result", "the author of the first one" and "only ones with covers" resolve against what was on screen. (It is a separate system note rather than appended text, so the model doesn't copy it into answers.)
 5. **Facts vs opinions.** Recommendations go under **Recommendation (AI suggestion):** and state what they're based on ("based on the Open Library descriptions — not a ranking by sales or reviews"). Questions the data can't answer (sales, ratings, prices) get an explicit "I don't have enough information from the available Open Library data…".
-6. **Guardrails in code, not just the prompt.** If the model writes a preamble and then decides to call more tools, that text is discarded (a `reset` stream event) so answers are never duplicated. If it forgets `show_books`, the cards fall back to the records it cited. An echoed internal note is stripped before rendering.
+6. **Guardrails in code, not just the prompt.** If the model writes a preamble and then decides to call more tools, that text is discarded (a `reset` stream event) so answers are never duplicated. If it forgets `show_books`, the cards fall back to the records it cited, or to the previous list on a cover filter. If Open Library can't be reached and the answer has no sourced facts, the app replaces it with its own error card and **Try again**, so an outage can never produce an answer from memory. An echoed internal note is stripped before rendering.
 7. **Reliability.** Open Library calls have a 9 s timeout, one retry and a 10-minute in-memory cache; failures are returned to the model as tool errors so it tells the user instead of guessing. OpenAI errors (bad key, quota, model not found, network) map to readable messages with a **Try again** button. Cards/popovers render cleanly with missing covers, authors, years or descriptions.
 
 ### Project layout

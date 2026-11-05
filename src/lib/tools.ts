@@ -1,5 +1,5 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { getWork, searchBooks, OpenLibraryError, type SearchParams } from "./openlibrary";
+import { getWork, searchBooks, OpenLibraryError, OpenLibraryUnavailableError, type SearchParams } from "./openlibrary";
 import { SourceRegistry, sourceForModel } from "./sources";
 
 export const TOOLS: ChatCompletionTool[] = [
@@ -68,6 +68,8 @@ export interface ToolContext {
   fetchImpl?: typeof fetch;
   /** Set by show_books; the final list of cards to render. */
   shownIds: string[] | null;
+  /** Set when Open Library could not be reached during this request. */
+  sourceFailed?: boolean;
 }
 
 export function describeToolCall(name: string, args: Record<string, unknown>, registry: SourceRegistry): string {
@@ -130,6 +132,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
               const out = sourceForModel(updated, { full: true });
               return { ...out, description: out.description ?? "(Open Library has no description for this book.)" };
             } catch (e) {
+              if (e instanceof OpenLibraryUnavailableError) ctx.sourceFailed = true;
               return { id, error: e instanceof Error ? e.message : "Failed to load details." };
             }
           }),
@@ -149,6 +152,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
         return { error: `Unknown tool ${name}` };
     }
   } catch (e) {
+    if (e instanceof OpenLibraryUnavailableError) ctx.sourceFailed = true;
     const msg = e instanceof OpenLibraryError ? e.message : "The book data source failed unexpectedly.";
     return { error: msg, instruction: "Tell the user the book data could not be retrieved right now; do not answer from memory." };
   }
