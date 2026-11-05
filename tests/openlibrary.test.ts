@@ -64,3 +64,22 @@ describe("getWork / helpers", () => {
     expect(coverUrl(-1)).toBeUndefined();
   });
 });
+
+describe("Open Library anti-bot handling", () => {
+  it("reports a verify_human redirect clearly and doesn't retry", async () => {
+    clearOpenLibraryCache();
+    let calls = 0;
+    const f = (async () => {
+      calls++;
+      return new Response(null, { status: 303, headers: { location: "https://openlibrary.org/verify_human?next=/search.json" } });
+    }) as unknown as typeof fetch;
+    await expect(searchBooks({ query: "dune" }, f)).rejects.toThrow(/temporarily limiting/);
+    expect(calls).toBe(1);
+  });
+
+  it("treats an HTML page as unavailable rather than crashing on JSON parsing", async () => {
+    clearOpenLibraryCache();
+    const f = (async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
+    await expect(searchBooks({ query: "dune" }, f)).rejects.toThrow(/unavailable right now \(non-JSON response\)/);
+  });
+});

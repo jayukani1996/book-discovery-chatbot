@@ -43,4 +43,6 @@ I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` som
 ~X hours *(fill in)*
 
 ## AI tools used
-Claude Code (Anthropic) for scaffolding, implementation, tests and documentation. I reviewed and directed the architecture, prompts and UX decisions. I tested the scenarios against the live APIs with a small script that drives `/api/chat` like the browser does, and used the transcripts to fix real issues: bunched citations, duplicated answers, a filter applied to the wrong list, missing recommendation labels, and Open Library's search and work records disagreeing on first-publication years.
+- **Claude (claude.ai)** built the first version: the project scaffold, agent, UI, tests and docs. That environment had no internet, so the first version was tested only against recorded Open Library data and simulated model responses.
+- **Claude Code (Anthropic)** handled verification and hardening against the live APIs. It drove `/api/chat` with scripts the same way the browser does, compared models, ran browser QA in headless Chrome, and fixed what the testing found: bunched citations, duplicated answers, a fabricated chapter summary, lost history on refresh, a filter applied to the wrong list, missing recommendation labels, and inconsistent publication dates.
+- My role was setting the requirements from the brief, deciding the tradeoffs (model choice, what to fix vs. document as a limitation), reviewing the output and running the scenarios.

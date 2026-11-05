@@ -22,6 +22,7 @@ npm run dev                       # http://localhost:3000
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `OPENAI_API_KEY` | yes | — | Server-side only; never sent to the browser. |
+| `OPENLIBRARY_CONTACT` | no | — | Email or URL added to the User-Agent sent to Open Library, which asks API clients to identify themselves. Recommended for a deployed demo. |
 | `RATE_LIMIT_PER_MINUTE` | no | `20` | Per-IP request limit for `/api/chat`, which protects the key on a public demo link. |
 | `OPENAI_MODEL` | no | `gpt-5.4-mini` | Any Chat Completions model with tool calling. If the key can't access the configured model, the app falls back to `gpt-4.1-mini` automatically. |
 
@@ -95,6 +96,9 @@ All scenarios above, plus the other example questions from the brief ("Show me m
 |---|---|---|
 | Unit / agent | `npm test` | Citation parsing and renumbering, invented-id dropping, Open Library normalization, the agent loop with a fake OpenAI client, the guardrails (preamble reset, card fallback, tampered-record rejection), the rate limiter |
 | Live eval | `npm run dev` then `npm run eval` | 17 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
+
+### Open Library etiquette
+Open Library is a free, volunteer-run service with anti-bot protection. The app caches responses for 10 minutes, backs off before its single retry, and never retries when Open Library signals rate limiting (a 429 or a redirect to its `verify_human` page). In that case the user sees "Open Library is temporarily limiting requests" and the bot does not answer from memory. Running `npm run eval` many times in a row can trigger this protection for your IP for a while.
 
 ## Security notes
 - The API key lives only in server env vars; `.env*` is git-ignored. Verified absent from the client bundle.

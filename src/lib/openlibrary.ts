@@ -10,14 +10,18 @@
 
 const BASE = "https://openlibrary.org";
 const COVERS = "https://covers.openlibrary.org";
-const USER_AGENT = "BookDiscoveryChat/1.0 (take-home prototype)";
+// Open Library asks API clients to identify themselves with an app name and a contact
+// (https://openlibrary.org/developers/api). Set OPENLIBRARY_CONTACT to an email or URL.
+const USER_AGENT = `ShelfBookChat/1.0 (${process.env.OPENLIBRARY_CONTACT || "take-home prototype"})`;
 const TIMEOUT_MS = 9000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 300;
+const RETRY_DELAY_MS = 600;
 
 export class OpenLibraryError extends Error {}
 
 const cache = new Map<string, { at: number; data: unknown }>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch): Promise<T> {
   const hit = cache.get(url);
@@ -25,22 +29,31 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch): Promise
 
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAY_MS); // back off instead of hammering a struggling API
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
       const res = await fetchImpl(url, {
         headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
         signal: ctrl.signal,
+        redirect: "manual",
       });
       if (res.status === 404) throw new OpenLibraryError("Record not found on Open Library.");
-      if (!res.ok) throw new Error(`Open Library responded with HTTP ${res.status}`);
+      // Open Library's anti-bot / rate-limit responses: a redirect to its "verify human" page, or 429.
+      const location = res.headers.get("location") ?? "";
+      if (res.status === 429 || /verify_human/.test(location)) {
+        throw new OpenLibraryError("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
+      }
+      if (res.status >= 300 && res.status < 400) throw new Error(`unexpected redirect to ${location || "?"}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if ((res.headers.get("content-type") ?? "").includes("text/html")) throw new Error("non-JSON response");
       const data = (await res.json()) as T;
       if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
       cache.set(url, { at: Date.now(), data });
       return data;
     } catch (err) {
       lastErr = err;
-      if (err instanceof OpenLibraryError) throw err; // 404: don't retry
+      if (err instanceof OpenLibraryError) throw err; // 404 / rate-limited: retrying won't help
     } finally {
       clearTimeout(timer);
     }
