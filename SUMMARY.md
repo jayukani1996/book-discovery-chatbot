@@ -41,6 +41,7 @@ I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` som
 - Grounding is enforced by the prompt, citation validation and a few code checks, not proven sentence by sentence. A model could still paraphrase a record loosely.
 - Conversation history sent to the model is capped at the last 16 messages and 40 known records.
 - Open Library can refuse an IP after bursts of traffic, which happened during testing. The app then uses Apple Books, a store catalog: its dates are ebook release dates, so it can't answer "when was this first published?", and the bot says so. Its results are also noisier, so some listings are weaker matches than Open Library's. If both sources refuse, book questions show an error card.
+- On the deployed app, roughly 1 answer in 10 stopped partway during testing, which didn't happen running locally. I didn't find the root cause in the time available. The browser now detects this after 20 seconds and starts the answer again, so the user sees a slow answer (about 30 seconds) rather than a stuck one.
 - The rate limit (20 requests/minute per IP) is in memory per server instance, so it protects a demo but isn't a production quota system.
 - Open Library data has its own errors (e.g. *Song of Solomon* listed as first published in 1634, SparkNotes listed as a co-author of *Kindred*). The bot reports the data faithfully and flags clearly implausible dates.
 
