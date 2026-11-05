@@ -24,3 +24,24 @@ export async function postWithRetry(url: string, init: RequestInit, fetchImpl: t
     }
   }
 }
+
+/** The answer stopped arriving: nothing was received for too long. */
+export class AnswerStalledError extends Error {
+  constructor() {
+    super("The answer stopped arriving. Please try again.");
+    this.name = "AnswerStalledError";
+  }
+}
+
+/** Reads the next chunk of a stream, but won't wait forever if the connection silently stops delivering. */
+export async function readOrStall<T>(reader: { read: () => Promise<T> }, stallMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AnswerStalledError()), stallMs);
+  });
+  try {
+    return await Promise.race([reader.read(), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

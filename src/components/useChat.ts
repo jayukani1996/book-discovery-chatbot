@@ -1,6 +1,6 @@
 "use client";
 
-import { postWithRetry } from "@/lib/postWithRetry";
+import { AnswerStalledError, postWithRetry, readOrStall } from "@/lib/postWithRetry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookSource, ChatMessage, StreamEvent } from "@/lib/types";
 
@@ -12,6 +12,9 @@ interface Persisted {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+// The server always speaks within this long: it has its own limits and sends status updates.
+const ANSWER_STALL_MS = 20_000;
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -53,6 +56,7 @@ export function useChat() {
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? fn(m) : m)));
 
+    for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -112,7 +116,7 @@ export function useChat() {
       };
 
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readOrStall(reader, ANSWER_STALL_MS);
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         let nl: number;
@@ -126,7 +130,15 @@ export function useChat() {
         }
       }
       if (gotError) throw new Error(gotError);
+      break;
     } catch (err) {
+      if (err instanceof AnswerStalledError) ctrl.abort();
+      if (err instanceof AnswerStalledError && attempt === 0) {
+        // Start the answer again from nothing rather than leave the user waiting.
+        patch((m) => ({ ...m, content: "", bookIds: undefined }));
+        setStatus("Still working on it…");
+        continue;
+      }
       const aborted = (err as Error)?.name === "AbortError";
       const message = aborted
         ? "Stopped."
@@ -134,11 +146,12 @@ export function useChat() {
           ? "Couldn't reach the server. Check your connection and try again."
           : (err as Error)?.message || "Something went wrong.";
       patch((m) => ({ ...m, error: message }));
-    } finally {
-      setLoading(false);
-      setStatus(null);
-      abortRef.current = null;
+      break;
     }
+    }
+    setLoading(false);
+    setStatus(null);
+    abortRef.current = null;
   }, []);
 
   const send = useCallback(

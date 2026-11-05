@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { postWithRetry } from "@/lib/postWithRetry";
+import { AnswerStalledError, postWithRetry, readOrStall } from "@/lib/postWithRetry";
 
 const ok = () => new Response("ok");
 
@@ -69,3 +69,18 @@ describe("postWithRetry", () => {
     expect(seen?.aborted).toBe(true);
   });
 });
+
+describe("readOrStall", () => {
+  it("returns a chunk that arrives in time", async () => {
+    await expect(readOrStall({ read: async () => "chunk" }, 50)).resolves.toBe("chunk");
+  });
+
+  it("gives up on a stream that silently stops delivering", async () => {
+    await expect(readOrStall({ read: () => new Promise(() => {}) }, 20)).rejects.toBeInstanceOf(AnswerStalledError);
+  });
+
+  it("passes on a real read error", async () => {
+    await expect(readOrStall({ read: async () => { throw new TypeError("dropped"); } }, 50)).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
