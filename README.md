@@ -4,6 +4,8 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 
 ![Shelf answering "Find books by J.K. Rowling" with inline citations and the Open Library source preview](docs/screenshot.png)
 
+**Submission summary** (what was built, priorities, limitations, time spent, AI tools): [SUMMARY.md](SUMMARY.md)
+
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · OpenAI Chat Completions (tool calling, streaming) · Open Library API (Apple Books as a backup) · Vitest
 
 ---
@@ -13,7 +15,7 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 Requires **Node.js 20.9+** (Next.js 16 requirement; an `.nvmrc` is included, so `nvm use` works).
 
 ```bash
-git clone <repo-url> book-chat && cd book-chat
+git clone https://github.com/jayukani1996/book-discovery-chatbot.git && cd book-discovery-chatbot
 npm install
 cp .env.example .env.local        # then put your key in OPENAI_API_KEY
 npm run dev                       # http://localhost:3000
