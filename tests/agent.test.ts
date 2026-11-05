@@ -408,6 +408,58 @@ describe("guardrails", () => {
     expect(guardInventedChapters(answer, new SourceRegistry())).toBe(answer);
   });
 
+  it("gives up on an AI response that goes quiet, and explains it to the user", async () => {
+    const { AgentTimeoutError } = await import("@/lib/agent");
+    let aborted = false;
+    const client = {
+      chat: {
+        completions: {
+          // Like the real client: an aborted stream just ends, without an error.
+          create: async (_: unknown, opts: { signal: AbortSignal }) =>
+            (async function* () {
+              await new Promise<void>((resolve) => opts.signal.addEventListener("abort", () => {
+                aborted = true;
+                resolve();
+              }));
+            })(),
+        },
+      },
+    } as unknown as OpenAI;
+    const events: StreamEvent[] = [];
+    const run2 = runAgent({ openai: client, model: "m", body: { messages: [user("Find books.")], sources: {} }, emit: (e) => events.push(e), limits: { stallMs: 20, deadlineMs: 1000 } });
+    await expect(run2).rejects.toBeInstanceOf(AgentTimeoutError);
+    expect(aborted).toBe(true);
+    expect(friendlyError(new AgentTimeoutError())).toContain("took too long");
+  });
+
+  it("gives up when book lookups run past the deadline", async () => {
+    const { AgentTimeoutError } = await import("@/lib/agent");
+    const { client } = fakeOpenAI([{ calls: [{ name: "search_books", args: { query: "x" } }] }]);
+    const never = (() => new Promise(() => {})) as unknown as typeof fetch;
+    const run2 = runAgent({ openai: client, model: "m", body: { messages: [user("Find books.")], sources: {} }, emit: () => {}, fetchImpl: never, limits: { stallMs: 1000, deadlineMs: 30 } });
+    await expect(run2).rejects.toBeInstanceOf(AgentTimeoutError);
+  });
+
+  it("a user pressing Stop is not treated as a timeout", async () => {
+    const { AgentTimeoutError } = await import("@/lib/agent");
+    const stop = new AbortController();
+    const client = {
+      chat: {
+        completions: {
+          create: async (_: unknown, opts: { signal: AbortSignal }) => {
+            stop.abort();
+            expect(opts.signal.aborted).toBe(true);
+            return (async function* () {})();
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const events: StreamEvent[] = [];
+    await runAgent({ openai: client, model: "m", body: { messages: [user("Find books.")], sources: {} }, emit: (e) => events.push(e), signal: stop.signal }).catch((err) => {
+      expect(err).not.toBeInstanceOf(AgentTimeoutError);
+    });
+  });
+
   it("removes a line the model repeated verbatim, and nothing else", async () => {
     const { dropRepeatedLines } = await import("@/lib/agent");
     expect(dropRepeatedLines("Only books.\nOnly books.")).toBe("Only books.");

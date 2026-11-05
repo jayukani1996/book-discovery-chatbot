@@ -51,7 +51,7 @@ const SUITE = [
       { q: "Find books by J.K. Rowling.", checks: [has.citations(3), has.cards(3), has.text(/Rowling/, "author name"), has.maxCitationsPerSpot(3)] },
       { q: "Tell me more about the second result.", checks: [has.citations(1), has.cards(1), has.secondOfPreviousList()] },
       { q: "Only show me books with cover images.", checks: [has.cards(1), has.allCardsHaveCovers()] },
-      { q: "Show me more books by the author of the second result.", checks: [has.newCards(1), has.noRepeatedCards(), (t) => t.cited.every((id) => t.cards.some((c) => c.id === id)) || "the text lists books the cards don't show", has.cardsByAuthor(/Rowling/), has.notText(/ordered by|sorted by/i, "internal sort wording"), NO_ADVICE, (t) => t.cards.length <= 12 || `too many cards: ${t.cards.length}`] },
+      { q: "Show me more books by the author of the second result.", checks: [has.newCards(1), has.noRepeatedCards(), (t) => [...t.text.matchAll(/^\s*[-*].*?\[(S\d+)\]/gm)].every((m) => t.cards.some((c) => c.id === m[1])) || "the text lists books the cards don't show", has.cardsByAuthor(/Rowling/), has.notText(/ordered by|sorted by/i, "internal sort wording"), NO_ADVICE, (t) => t.cards.length <= 12 || `too many cards: ${t.cards.length}`] },
     ],
   },
   {
@@ -124,7 +124,8 @@ async function ask(state, q) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: state.messages, sources: state.sources }),
-    });
+      signal: AbortSignal.timeout(70_000),
+    }).catch((err) => new Response(JSON.stringify({ error: err.message }), { status: 599 }));
   let res = await send();
   // Respect the app's per-IP rate limit instead of bypassing it.
   while (res.status === 429) {
@@ -135,8 +136,12 @@ async function ask(state, q) {
   }
   let text = "", bookIds = [], error;
   if (!res.ok) error = `HTTP ${res.status} ${await res.text()}`;
-  else
-    for (const line of (await res.text()).split("\n").filter(Boolean)) {
+  else {
+    const body = await res.text().catch((err) => {
+      error = `connection dropped mid-answer (${err.message})`;
+      return "";
+    });
+    for (const line of body.split("\n").filter(Boolean)) {
       const e = JSON.parse(line);
       if (e.type === "sources") for (const s of e.sources) state.sources[s.id] = s;
       if (e.type === "text") text += e.delta;
@@ -144,6 +149,7 @@ async function ask(state, q) {
       if (e.type === "books") bookIds = e.ids;
       if (e.type === "error") error = e.message;
     }
+  }
   const previousList = state.lastList ?? [];
   if (bookIds.length > 1) state.lastList = bookIds;
   const repeatedCardIds = bookIds.filter((id) => (state.shown ?? new Set()).has(id));

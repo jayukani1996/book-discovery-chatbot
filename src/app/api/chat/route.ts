@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import { runAgent, friendlyError } from "@/lib/agent";
+import { AgentTimeoutError, runAgent, friendlyError } from "@/lib/agent";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import type { ChatRequestBody, StreamEvent } from "@/lib/types";
 
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 2, timeout: 45_000 });
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 1, timeout: 15_000 });
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const encoder = new TextEncoder();
 
@@ -71,14 +71,21 @@ export async function POST(req: Request) {
         }
       };
       let emitted = false;
+      let answerStarted = false;
       const tracked = (e: StreamEvent) => {
         emitted = true;
+        if (e.type === "text") answerStarted = true;
         emit(e);
       };
       try {
         try {
           await runAgent({ openai, model, body, emit: tracked, signal: req.signal });
         } catch (err) {
+          if (err instanceof AgentTimeoutError && !answerStarted && !req.signal.aborted) {
+            console.warn("[api/chat] attempt timed out, retrying once");
+            await runAgent({ openai, model, body, emit, signal: req.signal });
+            return;
+          }
           const e = err as { status?: number; code?: string };
           const modelMissing = e?.status === 404 || e?.code === "model_not_found";
           if (!modelMissing || emitted || model === FALLBACK_MODEL) throw err;

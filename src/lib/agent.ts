@@ -8,6 +8,17 @@ import { extractCitationIds } from "./citations";
 import type { BookSource, ChatRequestBody, StreamEvent } from "./types";
 
 const MAX_ROUNDS = 6;
+// Two attempts have to fit inside the route's 60 second limit, and a stalled AI response must never hang.
+const STALL_MS = 15_000;
+const DEADLINE_MS = 27_000;
+
+/** The AI went quiet or the attempt ran too long. The route retries once if nothing has been shown yet. */
+export class AgentTimeoutError extends Error {
+  constructor() {
+    super("The answer took too long.");
+    this.name = "AgentTimeoutError";
+  }
+}
 const MAX_HISTORY = 16;
 const MAX_CONTEXT_RECORDS = 40;
 
@@ -18,6 +29,7 @@ export interface AgentOptions {
   emit: (e: StreamEvent) => void;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  limits?: { stallMs: number; deadlineMs: number };
 }
 
 export const SOURCE_DOWN_MESSAGE = "I couldn't reach Open Library or Apple Books, so I can't answer from real book data right now. Please try again in a minute.";
@@ -160,7 +172,54 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
   return msgs;
 }
 
-export async function runAgent({ openai, model, body, emit, fetchImpl, signal }: AgentOptions): Promise<void> {
+export async function runAgent(options: AgentOptions): Promise<void> {
+  const { signal, limits } = options;
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) cancel();
+  signal?.addEventListener("abort", cancel);
+
+  let timedOut = false;
+  const giveUp = () => {
+    timedOut = true;
+    cancel();
+  };
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadlineTimer = setTimeout(giveUp, limits?.deadlineMs ?? DEADLINE_MS);
+  const clock = {
+    /** Restarts the "AI has gone quiet" timer. */
+    alive: () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(giveUp, limits?.stallMs ?? STALL_MS);
+    },
+    /** Book lookups have their own timeouts, so only the overall deadline applies to them. */
+    pause: () => clearTimeout(stallTimer),
+    check: () => {
+      if (timedOut) throw new AgentTimeoutError();
+    },
+    aborted: new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(timedOut ? new AgentTimeoutError() : new DOMException("Aborted", "AbortError")));
+    }),
+  };
+  clock.aborted.catch(() => {});
+
+  try {
+    await runRounds(options, controller.signal, clock);
+  } catch (err) {
+    if (timedOut) throw new AgentTimeoutError();
+    throw err;
+  } finally {
+    clearTimeout(stallTimer);
+    clearTimeout(deadlineTimer);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+
+async function runRounds(
+  { openai, model, body, emit, fetchImpl }: AgentOptions,
+  signal: AbortSignal,
+  clock: { alive: () => void; pause: () => void; check: () => void; aborted: Promise<never> },
+): Promise<void> {
   const positionReply = missingPositionReply(body);
   if (positionReply) {
     emit({ type: "text", delta: positionReply });
@@ -174,6 +233,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const lastRound = round === MAX_ROUNDS - 1;
+    clock.alive();
     const stream = await openai.chat.completions.create(
       {
         model,
@@ -190,6 +250,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
     const calls = new Map<number, { id: string; name: string; args: string }>();
 
     for await (const chunk of stream) {
+      clock.alive();
       const delta = chunk.choices[0]?.delta;
       if (!delta) continue;
       if (delta.content) {
@@ -210,6 +271,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
         calls.set(tc.index, cur);
       }
     }
+    clock.check(); // an aborted stream ends without an error
 
     if (!calls.size) break; // final answer produced
 
@@ -237,7 +299,8 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
       }
     }
 
-    const results = await Promise.all(toolCalls.map((tc) => executeTool(tc.function.name, tc.function.arguments, ctx)));
+    clock.pause();
+    const results = await Promise.race([Promise.all(toolCalls.map((tc) => executeTool(tc.function.name, tc.function.arguments, ctx))), clock.aborted]);
     toolCalls.forEach((tc, i) => messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(results[i]) }));
 
     // The model wrote its answer and attached cards in the same turn: we're done.
@@ -287,6 +350,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
 /** Map provider errors to messages a user can act on. */
 export function friendlyError(err: unknown): string {
   const e = err as { status?: number; code?: string; message?: string; name?: string };
+  if (e?.name === "AgentTimeoutError") return "The AI service took too long to respond. Please try again.";
   if (e?.name === "AbortError") return "The request was cancelled.";
   if (e?.status === 401) return "The OpenAI API key is missing or invalid. Check OPENAI_API_KEY in your .env.local.";
   if (e?.status === 429) return "The AI service is rate-limited or out of quota right now. Please wait a moment and try again.";
