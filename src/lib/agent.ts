@@ -91,6 +91,24 @@ export function missingPositionReply(body: ChatRequestBody): string | null {
   return `I only showed ${shown} result${shown === 1 ? "" : "s"}, so there isn't a ${word} one. Which of ${shown === 1 ? "them" : `the ${shown}`} would you like to know more about?`;
 }
 
+/**
+ * Book records never hold chapter-level detail, so a chapter breakdown can only have come from the
+ * model's memory, whatever it cites. Replace it with what the record does say.
+ */
+export function guardInventedChapters(answer: string, registry: SourceRegistry) {
+  const chapter = /\bchapter\s+\d+/gi;
+  if ((answer.match(chapter) ?? []).length < 2) return answer;
+  const cited = extractCitationIds(answer).map((id) => registry.get(id)).filter((s): s is BookSource => !!s);
+  if (cited.some((s) => /\bchapter\s+\d+/i.test(s.description ?? ""))) return answer;
+  const source = cited[0];
+  if (!source) return "I don't have chapter-level details for that book in the available book data.";
+  const intro = `${source.sourceName} doesn't have a chapter-by-chapter breakdown of **${source.title}**, so I can't give one.`;
+  if (!source.description) return `${intro} It has no description for this book either [${source.id}].`;
+  const text = source.description.replace(/\s+/g, " ").trim();
+  const short = text.length > 320 ? `${text.slice(0, 320).replace(/\s+\S*$/, "")}…` : text;
+  return `${intro} Its description says: "${short}" [${source.id}]`;
+}
+
 const WANTS_RECOMMENDATION = /recommend|suggest|\bbest\b|should i\b|good for|compare|\brank|\bpick\b/i;
 const REC_LABEL = "**Recommendation (AI suggestion):**";
 
@@ -237,7 +255,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
 
   // Models occasionally repeat a line verbatim, or add advice to a plain search; never show those.
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const cleaned = ensureRecommendationLabel(dropUnaskedRecommendation(dropRepeatedLines(answer), lastUser), lastUser);
+  const cleaned = ensureRecommendationLabel(dropUnaskedRecommendation(guardInventedChapters(dropRepeatedLines(answer), registry), lastUser), lastUser);
   if (cleaned !== answer) {
     answer = cleaned;
     emit({ type: "reset", content: answer });

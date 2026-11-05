@@ -391,6 +391,23 @@ describe("guardrails", () => {
     expect(ensureRecommendationLabel("I don't have enough information.", "Which is best?")).not.toContain(label);
   });
 
+  it("replaces an invented chapter breakdown with what the record says", async () => {
+    const { guardInventedChapters } = await import("@/lib/agent");
+    const reg = new SourceRegistry();
+    reg.upsertFromSearch({ workKey: "/works/OL1W", title: "Nineteen Eighty-Four", authors: ["George Orwell"], authorKeys: [] });
+    reg.applyDetails("S1", { workKey: "/works/OL1W", description: "A novel about surveillance.", authorKeys: [] });
+    const out = guardInventedChapters("**Chapter 1:** Winston writes [S1].\n**Chapter 2:** He dreams [S1].", reg);
+    expect(out).toContain("doesn't have a chapter-by-chapter breakdown");
+    expect(out).toContain("A novel about surveillance. [S1]".replace(". [", '." ['));
+    expect(out).not.toContain("Winston writes");
+  });
+
+  it("leaves a passing mention of a chapter alone", async () => {
+    const { guardInventedChapters } = await import("@/lib/agent");
+    const answer = "It has no details for chapter 3 [S1].";
+    expect(guardInventedChapters(answer, new SourceRegistry())).toBe(answer);
+  });
+
   it("removes a line the model repeated verbatim, and nothing else", async () => {
     const { dropRepeatedLines } = await import("@/lib/agent");
     expect(dropRepeatedLines("Only books.\nOnly books.")).toBe("Only books.");
