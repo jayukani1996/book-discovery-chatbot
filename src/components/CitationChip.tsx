@@ -10,7 +10,7 @@ const W = 300;
 
 /**
  * Inline citation marker. Hover (desktop) or tap/click (touch) to open a
- * preview of the supporting Open Library record with a link to the source.
+ * preview of the supporting book record with a link to the source.
  */
 export function CitationChip({ n, source }: { n: number; source?: BookSource }) {
   const [open, setOpen] = useState(false);
@@ -107,10 +107,10 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
           className="elevated fade-up fixed z-50 rounded-xl border border-line bg-surface p-3.5 text-left"
         >
           <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" /> Open Library
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" /> {source.sourceName}
           </div>
           <div className="flex gap-3">
-            <BookCover coverId={source.coverId} title={source.title} size="S" className="h-[60px] w-[40px] shrink-0" />
+            <BookCover coverId={source.coverId} coverImage={source.coverImage} title={source.title} size="S" className="h-[60px] w-[40px] shrink-0" />
             <div className="min-w-0">
               <div className="font-serif text-[14.5px] font-semibold leading-snug">{source.title}</div>
               <dl className="mt-1 space-y-0.5 text-[12.5px] text-ink-2">
@@ -119,8 +119,8 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
                   <dd className="inline">{authors}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-ink-3">First published: </dt>
-                  <dd className="inline">{published}</dd>
+                  <dt className="inline text-ink-3">{source.releaseDate ? "Ebook released: " : "First published: "}</dt>
+                  <dd className="inline">{source.releaseDate ?? published}</dd>
                 </div>
                 {source.editionCount ? (
                   <div>

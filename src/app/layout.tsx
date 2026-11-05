@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Shelf — Book discovery chat",
-  description: "Ask about books. Answers grounded in Open Library data, with inline citations.",
+  description: "Ask about books. Answers grounded in real book data, with inline citations.",
 };
 
 export const viewport: Viewport = {

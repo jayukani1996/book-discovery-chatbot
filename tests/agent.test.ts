@@ -211,7 +211,7 @@ describe("guardrails", () => {
   it("a search with no terms is not mistaken for an outage", async () => {
     const r = await run(
       [{ calls: [{ name: "search_books", args: {} }] }, { text: "I don't have a results list yet. What should I search for?" }],
-      { messages: [user("Tell me more about the second result.")], sources: {} },
+      { messages: [user("Find me something.")], sources: {} },
       mockFetch({}),
     );
     expect(r.events.some((e) => e.type === "error")).toBe(false);
@@ -317,6 +317,21 @@ describe("guardrails", () => {
     const results = JSON.parse(toolMsg.content).results as { id: string; already_shown?: boolean }[];
     expect(results.find((b) => b.id === "S1")?.already_shown).toBe(true);
     expect(results.find((b) => b.id !== "S1")?.already_shown).toBeUndefined();
+  });
+
+  it("removes a recommendation nobody asked for, and keeps one that was requested", async () => {
+    const { dropUnaskedRecommendation } = await import("@/lib/agent");
+    const answer = "- A [S1]\n\n**Recommendation (AI suggestion):** Start with A [S1]. Not a ranking.\n\nWant more?";
+    expect(dropUnaskedRecommendation(answer, "Find books about AI.")).toBe("- A [S1]\n\nWant more?");
+    expect(dropUnaskedRecommendation(answer, "Which of these is best for a beginner?")).toBe(answer);
+    expect(dropUnaskedRecommendation(answer, "Recommend three books.")).toBe(answer);
+  });
+
+  it("answers 'the second result' itself when no list has been shown", async () => {
+    const r = await run([{ text: "should not be called" }], { messages: [user("Tell me more about the second result.")], sources: {} }, mockFetch({}));
+    expect(r.requests).toHaveLength(0);
+    expect(r.text).toContain("haven't shown you a list");
+    expect(r.books).toBeUndefined();
   });
 
   it("removes a line the model repeated verbatim, and nothing else", async () => {

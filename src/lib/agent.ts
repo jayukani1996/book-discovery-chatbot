@@ -2,6 +2,7 @@ import type OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions";
 import { SYSTEM_PROMPT } from "./prompt";
 import { SourceRegistry, sourceForModel } from "./sources";
+import { hasCover } from "./format";
 import { TOOLS, executeTool, describeToolCall, type ToolContext } from "./tools";
 import { extractCitationIds } from "./citations";
 import type { BookSource, ChatRequestBody, StreamEvent } from "./types";
@@ -19,7 +20,7 @@ export interface AgentOptions {
   signal?: AbortSignal;
 }
 
-export const SOURCE_DOWN_MESSAGE = "I couldn't reach Open Library, so I can't answer from real book data right now. Please try again in a minute.";
+export const SOURCE_DOWN_MESSAGE = "I couldn't reach Open Library or Apple Books, so I can't answer from real book data right now. Please try again in a minute.";
 
 const DISPLAY_NOTE = "App note: book cards displayed to the user under the previous answer, in order:";
 
@@ -33,7 +34,10 @@ export function coverFilterFallback(body: ChatRequestBody, registry: SourceRegis
   const asked = body.messages[body.messages.length - 1]?.content ?? "";
   if (!/\b(with|have|has|having|only)\b.*\bcovers?\b/i.test(asked)) return [];
   const list = [...body.messages].reverse().find((m) => m.role === "assistant" && (m.bookIds?.length ?? 0) > 1);
-  return (list?.bookIds ?? []).filter((id) => registry.get(id)?.coverId);
+  return (list?.bookIds ?? []).filter((id) => {
+    const s = registry.get(id);
+    return s && hasCover(s);
+  });
 }
 
 /** Remove a non-empty line that exactly repeats the previous non-empty line. */
@@ -52,6 +56,24 @@ export function dropRepeatedLines(text: string): string {
 }
 
 /** Turn the client conversation into model messages, annotated with what the user saw. */
+const ASKS_FOR_ADVICE = /recommend|suggest|\bbest\b|\bbetter\b|compare|\brank|\bpick\b|\bchoose\b|should i|good for|which (one|of|book)|worth|start with/i;
+
+/** The labelled recommendation is for requests that want one; a plain "find books" gets only facts. */
+export function dropUnaskedRecommendation(answer: string, userMessage: string) {
+  if (ASKS_FOR_ADVICE.test(userMessage)) return answer;
+  return answer.replace(/\n*\*\*Recommendation \(AI suggestion\):\*\*[^\n]*(\n(?!\n)[^\n]*)*/g, "").trimEnd();
+}
+
+const POSITION_RE = /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(st|nd|rd|th))\s+(result|one|book|title)\b/i;
+export const NO_LIST_MESSAGE = "I haven't shown you a list of books in this conversation yet, so I can't tell which one you mean. What would you like to search for?";
+
+/** "The second result" with no list on screen has one honest answer, so it never reaches the model. */
+export function refersToMissingList(body: ChatRequestBody) {
+  const last = body.messages[body.messages.length - 1];
+  const hasList = body.messages.some((m) => (m.bookIds?.length ?? 0) > 0);
+  return last?.role === "user" && !hasList && POSITION_RE.test(last.content);
+}
+
 export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): ChatCompletionMessageParam[] {
   const history = body.messages.slice(-MAX_HISTORY);
   const msgs: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }];
@@ -83,7 +105,7 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
           content:
             `${DISPLAY_NOTE} ` +
             shown
-              .map((s, i) => `${i + 1}. ${s.id} "${s.title}" — ${s.authors.join(", ") || "unknown author"}${s.firstPublishYear ? ` (${s.firstPublishYear})` : ""}, cover: ${s.coverId ? "yes" : "no"}`)
+              .map((s, i) => `${i + 1}. ${s.id} "${s.title}" — ${s.authors.join(", ") || "unknown author"}${s.firstPublishYear ? ` (${s.firstPublishYear})` : ""}, cover: ${hasCover(s) ? "yes" : "no"}`)
               .join("; "),
         });
       }
@@ -93,6 +115,10 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
 }
 
 export async function runAgent({ openai, model, body, emit, fetchImpl, signal }: AgentOptions): Promise<void> {
+  if (refersToMissingList(body)) {
+    emit({ type: "text", delta: NO_LIST_MESSAGE });
+    return;
+  }
   const registry = new SourceRegistry(body.sources);
   const alreadyShown = new Set(body.messages.flatMap((m) => m.bookIds ?? []));
   const ctx: ToolContext = { registry, fetchImpl, shownIds: null, alreadyShown };
@@ -180,14 +206,15 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
   const invalid = extractCitationIds(answer).filter((id) => !registry.has(id));
   if (invalid.length) console.warn(`[agent] model cited unknown ids: ${invalid.join(", ")}`);
 
-  // Models occasionally repeat a line verbatim; never show that.
-  const cleaned = dropRepeatedLines(answer);
+  // Models occasionally repeat a line verbatim, or add advice to a plain search; never show those.
+  const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const cleaned = dropUnaskedRecommendation(dropRepeatedLines(answer), lastUser);
   if (cleaned !== answer) {
     answer = cleaned;
     emit({ type: "reset", content: answer });
   }
 
-  // Open Library failed and the answer has no sourced facts: show the app's own error card with
+  // The book sources failed and the answer has no sourced facts: show the app's own error card with
   // "Try again" instead of whatever the model improvised. Answers citing real records are kept.
   if (ctx.sourceFailed && !extractCitationIds(answer).some((id) => registry.has(id))) {
     emit({ type: "reset", content: "" });

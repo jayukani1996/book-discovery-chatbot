@@ -24,6 +24,20 @@ describe("request pacing", () => {
   });
 });
 
+describe("cooldown after a refusal", () => {
+  it("stops calling Open Library for a while once it refuses", async () => {
+    let calls = 0;
+    const f = (async () => {
+      calls++;
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    await expect(searchBooks({ author: "a" }, f)).rejects.toThrow(/unavailable/);
+    const afterFirst = calls;
+    await expect(searchBooks({ author: "b" }, f)).rejects.toThrow(/unavailable/);
+    expect(calls).toBe(afterFirst);
+  });
+});
+
 describe("searchBooks", () => {
   it("builds the query and normalizes docs (dropping malformed ones)", async () => {
     let seen = "";

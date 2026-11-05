@@ -4,7 +4,7 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 
 ![Shelf answering "Find books by J.K. Rowling" with inline citations and the Open Library source preview](docs/screenshot.png)
 
-**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · OpenAI Chat Completions (tool calling, streaming) · Open Library API · Vitest
+**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · OpenAI Chat Completions (tool calling, streaming) · Open Library API (Apple Books as a backup) · Vitest
 
 ---
 
@@ -29,7 +29,7 @@ npm run dev                       # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test          # 44 unit + agent-loop tests (no network, no API key needed)
+npm test          # 60 unit + agent-loop tests (no network, no API key needed)
 npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
@@ -97,8 +97,13 @@ All scenarios above, plus the other example questions from the brief ("Show me m
 | Unit / agent | `npm test` | Citation parsing and renumbering, invented-id dropping, Open Library normalization, the agent loop with a fake OpenAI client, the guardrails (preamble reset, card fallback, tampered-record rejection), the rate limiter |
 | Live eval | `npm run dev` then `npm run eval` | 17 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
 
+### Book data sources
+Open Library is the main source. If it refuses a request or can't be reached, searches switch to the Apple Books Search API (no key needed) and the app stops calling Open Library for 60 seconds. When a search only finds nothing, it does not switch. Apple's records are labelled wherever they appear: on the card, in the citation preview and in a note under the answer.
+
+Apple's catalog lists ebooks, so its date is that ebook's release date. The app keeps it apart from first publication: *Kindred* shows "Ebook released 1997", and the bot says Apple doesn't have the original publication date rather than giving a year from memory. If both sources are down, the user sees an error card with a Try again button.
+
 ### Open Library etiquette
-Open Library is a free, volunteer-run service with anti-bot protection. The app caches responses for 10 minutes, spaces requests about 350 ms apart, backs off before its single retry, and never retries when Open Library signals rate limiting (a 429 or a redirect to its `verify_human` page). If Open Library can't be reached, the user sees an error card with a Try again button and the bot does not answer from memory. Running `npm run eval` many times in a row can get your IP refused by Open Library for a while; book questions then show that error card until the block clears.
+Open Library is a free, volunteer-run service with anti-bot protection. The app caches responses for 10 minutes, spaces requests about 350 ms apart, backs off before its single retry, and never retries when Open Library signals rate limiting (a 429 or a redirect to its `verify_human` page). If Open Library can't be reached, the app uses its backup source, and the bot never answers from memory. Running `npm run eval` many times in a row can get your IP refused by Open Library for a while; searches then use Apple Books until the block clears. Apple refuses bursts too (roughly 20 requests a minute), so `npm run eval` spaces its turns 6 seconds apart (`EVAL_GAP_MS`).
 
 ## Security notes
 - The API key lives only in server env vars; `.env*` is git-ignored. Verified absent from the client bundle.

@@ -1,11 +1,16 @@
 import type { BookSource } from "./types";
 import { workUrl, type OLSearchHit, type OLWorkDetails } from "./openlibrary";
-import { consistentPublishDate } from "./format";
+import { APPLE_KEY_RE, appleUrl, safeCoverImage } from "./applebooks";
+import { consistentPublishDate, hasCover } from "./format";
+
+const isApple = (workKey: string) => APPLE_KEY_RE.test(workKey);
+const linkFor = (workKey: string) => (isApple(workKey) ? appleUrl(workKey) : workUrl(workKey));
+const nameFor = (workKey: string): BookSource["sourceName"] => (isApple(workKey) ? "Apple Books" : "Open Library");
 
 /**
  * Conversation-scoped registry of every book record the agent has retrieved.
  * Ids are stable for the whole conversation ("S1", "S2", ...) and the same
- * Open Library work always maps to the same id, so a citation made three
+ * book record always maps to the same id, so a citation made three
  * turns ago still points at the same record.
  */
 export class SourceRegistry {
@@ -19,7 +24,7 @@ export class SourceRegistry {
     for (let s of Object.values(initial)) {
       if (!isValidSource(s)) continue;
       // Client-held records are untrusted: rebuild the link and source name rather than trusting them.
-      s = { ...s, url: workUrl(s.workKey), sourceName: "Open Library" };
+      s = { ...s, url: linkFor(s.workKey), sourceName: nameFor(s.workKey), coverImage: safeCoverImage(s.coverImage) };
       this.byId.set(s.id, s);
       this.byWork.set(s.workKey, s.id);
       const n = Number(s.id.slice(1));
@@ -53,12 +58,15 @@ export class SourceRegistry {
       authorKeys: hit.authorKeys.length ? hit.authorKeys : prev?.authorKeys ?? [],
       firstPublishYear: hit.firstPublishYear ?? prev?.firstPublishYear,
       coverId: hit.coverId ?? prev?.coverId,
+      coverImage: hit.coverImage ?? prev?.coverImage,
+      releaseDate: hit.releaseDate ?? prev?.releaseDate,
+      description: hit.description ?? prev?.description,
       editionCount: hit.editionCount ?? prev?.editionCount,
       pageCount: hit.pageCount ?? prev?.pageCount,
       subjects: prev?.subjects?.length ? prev.subjects : hit.subjects,
       languages: hit.languages ?? prev?.languages,
-      url: workUrl(hit.workKey),
-      sourceName: "Open Library",
+      url: linkFor(hit.workKey),
+      sourceName: nameFor(hit.workKey),
     };
     this.byId.set(id, merged);
     this.byWork.set(hit.workKey, id);
@@ -94,21 +102,24 @@ function isValidSource(s: unknown): s is BookSource {
     typeof o.id === "string" &&
     /^S\d+$/.test(o.id) &&
     typeof o.workKey === "string" &&
-    /^\/works\/OL\d+W$/.test(o.workKey) &&
+    (/^\/works\/OL\d+W$/.test(o.workKey) || isApple(o.workKey)) &&
     typeof o.title === "string" &&
     Array.isArray(o.authors)
   );
 }
 
-/** Compact, model-facing view of a record. Only facts that came from Open Library. */
+/** Compact, model-facing view of a record. Only facts that came from the book source. */
 export function sourceForModel(s: BookSource, opts: { full?: boolean } = {}) {
   return {
     id: s.id,
+    source: s.sourceName,
     title: s.subtitle ? `${s.title}: ${s.subtitle}` : s.title,
     authors: s.authors.length ? s.authors : undefined,
     first_publish_year: s.firstPublishYear,
     first_publish_date: s.firstPublishDate ? consistentPublishDate(s) : undefined,
-    has_cover: !!s.coverId,
+    ebook_release_date: s.releaseDate,
+    first_publication: s.sourceName === "Apple Books" ? "unknown: Apple Books doesn't provide it" : undefined,
+    has_cover: hasCover(s),
     edition_count: s.editionCount,
     median_pages: s.pageCount,
     subjects: s.subjects?.slice(0, opts.full ? 12 : 6),

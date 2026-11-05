@@ -54,7 +54,7 @@ export function Chat() {
               S
             </span>
             <span className="font-serif text-xl font-semibold tracking-tight">Shelf</span>
-            <span className="hidden text-[13px] text-ink-3 sm:inline">Book discovery, grounded in Open Library</span>
+            <span className="hidden text-[13px] text-ink-3 sm:inline">Book discovery, grounded in real book data</span>
           </div>
           <div className="flex items-center gap-1.5">
             {messages.length > 0 && (
@@ -177,7 +177,7 @@ export function Chat() {
             )}
           </form>
           <p className="mt-2 text-center text-[11.5px] text-ink-3">
-            Facts come from Open Library and are cited inline. Opinions are labeled as AI suggestions.
+            Facts come from Open Library, or Apple Books if it's unavailable, and are cited inline. Opinions are labeled as AI suggestions.
           </p>
         </div>
       </footer>
@@ -195,7 +195,7 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
       </div>
       <h1 className="font-serif text-[34px] font-semibold leading-tight tracking-tight">What would you like to read?</h1>
       <p className="mx-auto mt-3 max-w-md text-[15px] text-ink-2">
-        Search by author, title or topic. Every fact links back to its Open Library record — hover a citation to check it.
+        Search by author, title or topic. Every fact links back to its source record — hover a citation to check it.
       </p>
       <div className="mx-auto mt-8 grid max-w-xl gap-2 sm:grid-cols-2">
         {EXAMPLES.map((q) => (

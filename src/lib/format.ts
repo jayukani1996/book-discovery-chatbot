@@ -1,5 +1,7 @@
 import type { BookSource } from "./types";
 
+export const hasCover = (s: Pick<BookSource, "coverId" | "coverImage">) => !!(s.coverId || s.coverImage);
+
 /**
  * Open Library's search index (`first_publish_year`) and the work record
  * (`first_publish_date`) sometimes disagree, e.g. Chamber of Secrets: 1998 vs "1999".

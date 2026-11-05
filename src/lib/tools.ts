@@ -1,5 +1,6 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { getWork, searchBooks, OpenLibraryError, OpenLibraryUnavailableError, type SearchParams } from "./openlibrary";
+import { searchAppleBooks } from "./applebooks";
 import { SourceRegistry, sourceForModel } from "./sources";
 
 export const TOOLS: ChatCompletionTool[] = [
@@ -8,7 +9,7 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "search_books",
       description:
-        "Search Open Library for books (works). Provide at least one of query, title, author, subject. Returns records with ids you can cite and show.",
+        "Search for books. Uses Open Library, or Apple Books when Open Library is unavailable; each result names its source. Provide at least one of query, title, author, subject. Returns records with ids you can cite and show.",
       parameters: {
         type: "object",
         properties: {
@@ -34,7 +35,7 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "get_book_details",
       description:
-        "Fetch the full Open Library record (description, subjects, first publication date) for already-retrieved books. Use before describing a book's content or judging suitability.",
+        "Fetch the full record (description, subjects, first publication date) for already-retrieved books. Use before describing a book's content or judging suitability.",
       parameters: {
         type: "object",
         properties: {
@@ -112,7 +113,11 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           onlyWithCovers: args.only_with_covers === true,
           language: str(args.language),
         };
-        const { total, hits } = await searchBooks(params, ctx.fetchImpl);
+        // Open Library is the main source; Apple Books only takes over when it refuses or is down.
+        const { total, hits } = await searchBooks(params, ctx.fetchImpl).catch((e) => {
+          if (e instanceof OpenLibraryUnavailableError) return searchAppleBooks(params, ctx.fetchImpl);
+          throw e;
+        });
         const records = hits.map((h) => {
           const record = sourceForModel(ctx.registry.upsertFromSearch(h));
           return ctx.alreadyShown?.has(record.id) ? { ...record, already_shown: true } : record;
@@ -121,7 +126,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           total_matches: total,
           returned: records.length,
           results: records,
-          note: records.length ? undefined : "No matching books found on Open Library.",
+          note: records.length ? undefined : "No matching books found.",
         };
       }
 
@@ -131,6 +136,11 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           ids.map(async (id) => {
             const src = ctx.registry.get(id);
             if (!src) return { id, error: "Unknown id. Only use ids from search results." };
+            // Apple Books search results already hold everything Apple has.
+            if (src.sourceName === "Apple Books") {
+              const out = sourceForModel(src, { full: true });
+              return { ...out, description: out.description ?? "(Apple Books has no description for this book.)" };
+            }
             try {
               const details = await getWork(src.workKey, ctx.fetchImpl);
               const updated = ctx.registry.applyDetails(id, details)!;

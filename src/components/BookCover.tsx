@@ -5,11 +5,11 @@ import { coverUrl } from "@/lib/openlibrary";
 
 const PALETTE = ["#7c2d12", "#1e3a5f", "#3f5f3a", "#5b3a6b", "#7a5a1e", "#2f4f4f"];
 
-/** Cover image with a typographic fallback when Open Library has no cover (or it fails to load). */
-export function BookCover({ coverId, title, size = "M", className = "" }: { coverId?: number; title: string; size?: "S" | "M" | "L"; className?: string }) {
+/** Cover image with a typographic fallback when the source has no cover (or it fails to load). */
+export function BookCover({ coverId, coverImage, title, size = "M", className = "" }: { coverId?: number; coverImage?: string; title: string; size?: "S" | "M" | "L"; className?: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const url = coverUrl(coverId, size);
+  const url = coverImage ?? coverUrl(coverId, size);
 
   if (!url || failed) {
     const color = PALETTE[[...title].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETTE.length];

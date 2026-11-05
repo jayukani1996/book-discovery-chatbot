@@ -16,7 +16,7 @@ export function BookCard({ book, index, onAsk }: { book: BookSource; index: numb
   return (
     <article className="fade-up group flex w-full gap-3 rounded-xl border border-line bg-surface/70 p-3 transition duration-200 hover:-translate-y-0.5 hover:border-ink-3/40 hover:bg-surface hover:shadow-[0_10px_28px_-14px_rgb(var(--shadow)/0.35)]">
       <div className="relative shrink-0">
-        <BookCover coverId={book.coverId} title={book.title} className="h-[108px] w-[72px]" />
+        <BookCover coverId={book.coverId} coverImage={book.coverImage} title={book.title} className="h-[108px] w-[72px]" />
         <span className="absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-paper shadow">
           {index + 1}
         </span>
@@ -28,7 +28,7 @@ export function BookCard({ book, index, onAsk }: { book: BookSource; index: numb
         </h3>
         <p className="mt-0.5 truncate text-[13px] text-ink-2">{authors}</p>
         <p className="mt-0.5 text-[12px] text-ink-3">
-          {year ? `First published ${year}` : "Publication year unknown"}
+          {book.releaseDate ? `Ebook released ${book.releaseDate.slice(0, 4)}` : year ? `First published ${year}` : "Publication year unknown"}
           {book.editionCount ? ` · ${book.editionCount} edition${book.editionCount === 1 ? "" : "s"}` : ""}
         </p>
         {blurb ? (
@@ -44,7 +44,7 @@ export function BookCard({ book, index, onAsk }: { book: BookSource; index: numb
         ) : null}
         <div className="mt-auto flex items-center gap-3 pt-2 text-[12px]">
           <a href={book.url} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
-            Open Library ↗
+            {book.sourceName} ↗
           </a>
           {onAsk && (
             <button

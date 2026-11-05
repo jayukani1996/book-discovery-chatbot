@@ -19,6 +19,7 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 300;
 const RETRY_DELAY_MS = 600;
 const MIN_GAP_MS = 350; // about three requests a second, per server instance
+const DOWN_COOLDOWN_MS = 60 * 1000; // once refused, don't keep knocking (or keep users waiting)
 
 export class OpenLibraryError extends Error {}
 /** Open Library itself couldn't be reached or is limiting us (as opposed to a bad request or a missing record). */
@@ -26,6 +27,12 @@ export class OpenLibraryUnavailableError extends OpenLibraryError {}
 
 const cache = new Map<string, { at: number; data: unknown }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let downUntil = 0;
+function unavailable(message: string) {
+  downUntil = Date.now() + DOWN_COOLDOWN_MS;
+  return new OpenLibraryUnavailableError(message);
+}
 
 let nextSlot = 0;
 /** Hands out evenly spaced send times, so parallel tool calls can't burst. */
@@ -39,6 +46,7 @@ async function waitForSlot() {
 async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0): Promise<T> {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data as T;
+  if (Date.now() < downUntil) throw new OpenLibraryUnavailableError("Open Library is unavailable right now (refused a moment ago).");
 
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -56,7 +64,7 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
       // Open Library's anti-bot / rate-limit responses: a redirect to its "verify human" page, or 429.
       const location = res.headers.get("location") ?? "";
       if (res.status === 429 || /verify_human/.test(location)) {
-        throw new OpenLibraryUnavailableError("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
+        throw unavailable("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
       }
       if (res.status >= 300 && res.status < 400) {
         // Ordinary redirects (e.g. merged works) are followed, but only within Open Library.
@@ -78,13 +86,14 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
     }
   }
   const msg = lastErr instanceof Error && lastErr.name === "AbortError" ? "request timed out" : String((lastErr as Error)?.message ?? lastErr);
-  throw new OpenLibraryUnavailableError(`Open Library is unavailable right now (${msg}).`);
+  throw unavailable(`Open Library is unavailable right now (${msg}).`);
 }
 
 /** Exposed for tests. */
 export function clearOpenLibraryCache() {
   cache.clear();
   nextSlot = 0;
+  downUntil = 0;
 }
 
 // ---------- Normalized shapes ----------
@@ -101,6 +110,11 @@ export interface OLSearchHit {
   pageCount?: number;
   subjects?: string[];
   languages?: string[];
+  // Set only by the Apple Books backup.
+  coverImage?: string;
+  releaseDate?: string;
+  description?: string;
+  sourceName?: "Open Library" | "Apple Books";
 }
 
 export interface OLWorkDetails {

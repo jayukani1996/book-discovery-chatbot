@@ -49,6 +49,7 @@ function AssistantMessageImpl({ message, sources, streaming, status, onAsk, onRe
 
   const books = (message.bookIds ?? []).map((id) => sources[id]).filter((b): b is BookSource => !!b);
   const empty = !message.content;
+  const usesBackup = [...books, ...order.map((id) => sources[id])].some((b) => b?.sourceName === "Apple Books");
 
   return (
     <div className="flex gap-3">
@@ -79,6 +80,12 @@ function AssistantMessageImpl({ message, sources, streaming, status, onAsk, onRe
           <div className="mt-2 text-[12.5px] text-ink-3" role="status">
             {status}
           </div>
+        )}
+
+        {usesBackup && !streaming && (
+          <p className="mt-3 text-[12.5px] text-ink-3">
+            Open Library wasn&apos;t reachable, so this answer uses Apple Books. Its dates are ebook release dates, not first publication.
+          </p>
         )}
 
         {books.length > 0 && (
