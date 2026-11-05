@@ -4,6 +4,26 @@ import { kindredWork, mockFetch, rowlingSearch } from "./fixtures";
 
 beforeEach(() => clearOpenLibraryCache());
 
+describe("request pacing", () => {
+  it("spaces parallel requests out and doesn't delay cached ones", async () => {
+    const sent: number[] = [];
+    const f = mockFetch({
+      "search.json": () => {
+        sent.push(Date.now());
+        return new Response(JSON.stringify(rowlingSearch));
+      },
+    });
+    await Promise.all(["a", "b", "c"].map((author) => searchBooks({ author }, f)));
+    expect(sent).toHaveLength(3);
+    expect(sent[2] - sent[0]).toBeGreaterThanOrEqual(650);
+
+    const t0 = Date.now();
+    await searchBooks({ author: "a" }, f);
+    expect(sent).toHaveLength(3);
+    expect(Date.now() - t0).toBeLessThan(50);
+  });
+});
+
 describe("searchBooks", () => {
   it("builds the query and normalizes docs (dropping malformed ones)", async () => {
     let seen = "";

@@ -55,12 +55,13 @@ export function dropRepeatedLines(text: string): string {
 export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): ChatCompletionMessageParam[] {
   const history = body.messages.slice(-MAX_HISTORY);
   const msgs: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  const seen = new Set(body.messages.flatMap((m) => m.bookIds ?? []));
 
   const known = registry
     .all()
     .sort((a, b) => Number(b.id.slice(1)) - Number(a.id.slice(1)))
     .slice(0, MAX_CONTEXT_RECORDS)
-    .map((s) => sourceForModel(s));
+    .map((s) => (seen.has(s.id) ? { ...sourceForModel(s), already_shown: true } : sourceForModel(s)));
   if (known.length) {
     msgs.push({
       role: "system",
@@ -93,7 +94,8 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
 
 export async function runAgent({ openai, model, body, emit, fetchImpl, signal }: AgentOptions): Promise<void> {
   const registry = new SourceRegistry(body.sources);
-  const ctx: ToolContext = { registry, fetchImpl, shownIds: null };
+  const alreadyShown = new Set(body.messages.flatMap((m) => m.bookIds ?? []));
+  const ctx: ToolContext = { registry, fetchImpl, shownIds: null, alreadyShown };
   const messages = buildMessages(body, registry);
   let answer = "";
 
@@ -197,8 +199,11 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
     const msg = "Sorry — I couldn't produce an answer for that. Please try rephrasing.";
     emit({ type: "text", delta: msg });
   }
-  // If the model forgot show_books, show cards for the records it cited, in citation order.
-  let shownIds = ctx.shownIds ?? extractCitationIds(answer).filter((id) => registry.has(id));
+  // If the model forgot show_books (or passed nothing), show cards for the records it cited, in citation order.
+  // The same applies when the cards and the text are about entirely different books.
+  const cited = extractCitationIds(answer).filter((id) => registry.has(id));
+  const cardsMatchText = ctx.shownIds?.length && (!cited.length || ctx.shownIds.some((id) => cited.includes(id)));
+  let shownIds = cardsMatchText ? ctx.shownIds! : cited;
   // Same safety net for the cover filter: re-show the last result list, minus books without covers.
   if (!shownIds.length && !ctx.shownIds) shownIds = coverFilterFallback(body, registry);
   if (shownIds.length) emit({ type: "books", ids: shownIds });

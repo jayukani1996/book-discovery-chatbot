@@ -68,6 +68,8 @@ export interface ToolContext {
   fetchImpl?: typeof fetch;
   /** Set by show_books; the final list of cards to render. */
   shownIds: string[] | null;
+  /** Ids the user has already seen as cards in this conversation. */
+  alreadyShown?: Set<string>;
   /** Set when Open Library could not be reached during this request. */
   sourceFailed?: boolean;
 }
@@ -111,7 +113,10 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           language: str(args.language),
         };
         const { total, hits } = await searchBooks(params, ctx.fetchImpl);
-        const records = hits.map((h) => sourceForModel(ctx.registry.upsertFromSearch(h)));
+        const records = hits.map((h) => {
+          const record = sourceForModel(ctx.registry.upsertFromSearch(h));
+          return ctx.alreadyShown?.has(record.id) ? { ...record, already_shown: true } : record;
+        });
         return {
           total_matches: total,
           returned: records.length,

@@ -29,7 +29,7 @@ npm run dev                       # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test          # 39 unit + agent-loop tests (no network, no API key needed)
+npm test          # 44 unit + agent-loop tests (no network, no API key needed)
 npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
@@ -98,7 +98,7 @@ All scenarios above, plus the other example questions from the brief ("Show me m
 | Live eval | `npm run dev` then `npm run eval` | 17 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
 
 ### Open Library etiquette
-Open Library is a free, volunteer-run service with anti-bot protection. The app caches responses for 10 minutes, backs off before its single retry, and never retries when Open Library signals rate limiting (a 429 or a redirect to its `verify_human` page). In that case the user sees "Open Library is temporarily limiting requests" and the bot does not answer from memory. Running `npm run eval` many times in a row can trigger this protection for your IP for a while.
+Open Library is a free, volunteer-run service with anti-bot protection. The app caches responses for 10 minutes, spaces requests about 350 ms apart, backs off before its single retry, and never retries when Open Library signals rate limiting (a 429 or a redirect to its `verify_human` page). If Open Library can't be reached, the user sees an error card with a Try again button and the bot does not answer from memory. Running `npm run eval` many times in a row can get your IP refused by Open Library for a while; book questions then show that error card until the block clears.
 
 ## Security notes
 - The API key lives only in server env vars; `.env*` is git-ignored. Verified absent from the client bundle.

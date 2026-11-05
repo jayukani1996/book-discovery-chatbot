@@ -3,6 +3,7 @@
  * Docs: https://openlibrary.org/developers/api
  *
  * - Every request has a timeout and one retry on network/5xx failure.
+ * - Requests are paced, because bursts get an IP refused by Open Library.
  * - Responses are cached in memory for a few minutes (the data barely changes,
  *   and follow-up questions often re-request the same records).
  * - Output is normalized so the rest of the app never touches raw OL shapes.
@@ -17,6 +18,7 @@ const TIMEOUT_MS = 9000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 300;
 const RETRY_DELAY_MS = 600;
+const MIN_GAP_MS = 350; // about three requests a second, per server instance
 
 export class OpenLibraryError extends Error {}
 /** Open Library itself couldn't be reached or is limiting us (as opposed to a bad request or a missing record). */
@@ -25,6 +27,15 @@ export class OpenLibraryUnavailableError extends OpenLibraryError {}
 const cache = new Map<string, { at: number; data: unknown }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+let nextSlot = 0;
+/** Hands out evenly spaced send times, so parallel tool calls can't burst. */
+async function waitForSlot() {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + MIN_GAP_MS;
+  if (at > now) await sleep(at - now);
+}
+
 async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0): Promise<T> {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data as T;
@@ -32,6 +43,7 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAY_MS); // back off instead of hammering a struggling API
+    await waitForSlot();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
@@ -72,6 +84,7 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0
 /** Exposed for tests. */
 export function clearOpenLibraryCache() {
   cache.clear();
+  nextSlot = 0;
 }
 
 // ---------- Normalized shapes ----------

@@ -265,6 +265,60 @@ describe("guardrails", () => {
     expect(r.books).toEqual(["S1"]);
   });
 
+  it("shows cards for cited records when show_books is called with nothing", async () => {
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { title: "Kindred" } }] },
+        { text: "Kindred was written by Octavia E. Butler [S1].", calls: [{ name: "show_books", args: { ids: [] } }] },
+      ],
+      { messages: [user("Who wrote Kindred?")], sources: {} },
+      mockFetch({ "search.json": kindredSearch }),
+    );
+    expect(r.books).toEqual(["S1"]);
+  });
+
+  it("shows the cited books when the cards and the text are about different books", async () => {
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { author: "J.K. Rowling" } }] },
+        { text: "More: Chamber of Secrets [S2].", calls: [{ name: "show_books", args: { ids: ["S1"] } }] },
+      ],
+      { messages: [user("Show me more.")], sources: {} },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    expect(r.books).toEqual(["S2"]);
+  });
+
+  it("keeps the chosen cards when an uncited answer is about them", async () => {
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { author: "J.K. Rowling" } }] },
+        { text: "All of them already have covers.", calls: [{ name: "show_books", args: { ids: ["S1", "S2"] } }] },
+      ],
+      { messages: [user("Only with covers.")], sources: {} },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    expect(r.books).toEqual(["S1", "S2"]);
+  });
+
+  it("marks search results the user has already seen, so 'more books' can skip them", async () => {
+    const seen = new SourceRegistry();
+    const first = rowlingSearch.docs[0];
+    seen.upsertFromSearch({ workKey: first.key, title: first.title!, authors: first.author_name!, authorKeys: [] });
+    const r = await run(
+      [{ calls: [{ name: "search_books", args: { author: "J.K. Rowling" } }] }, { text: "Here are more." }],
+      {
+        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Show me more.")],
+        sources: Object.fromEntries(seen.all().map((b) => [b.id, b])),
+      },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    const toolMsg = (r.requests[1].messages as { role: string; content: string }[]).find((m) => m.role === "tool")!;
+    const results = JSON.parse(toolMsg.content).results as { id: string; already_shown?: boolean }[];
+    expect(results.find((b) => b.id === "S1")?.already_shown).toBe(true);
+    expect(results.find((b) => b.id !== "S1")?.already_shown).toBeUndefined();
+  });
+
   it("removes a line the model repeated verbatim, and nothing else", async () => {
     const { dropRepeatedLines } = await import("@/lib/agent");
     expect(dropRepeatedLines("Only books.\nOnly books.")).toBe("Only books.");
