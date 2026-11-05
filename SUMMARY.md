@@ -1,7 +1,7 @@
 # Submission summary
 
 ## What I built
-**Shelf**, a chat app for discovering books. A Next.js app streams answers from an OpenAI tool-calling agent that pulls all its facts from the Open Library API. Answers come with book cards (cover, author, first-publication year, edition count, description or subjects, source link) and numbered inline citations. Hovering or clicking a citation opens a preview with the source name, title, author, first-published date, a description snippet and a "View source ↗" link. Follow-up questions work: "the second result", "the author of the first one" and "only ones with covers" all resolve against the cards the user actually saw.
+**Shelf**, a chat app for discovering books. A Next.js app streams answers from an OpenAI tool-calling agent that pulls all its facts from the Open Library API, with Apple Books as a labelled backup when Open Library refuses. Answers come with book cards (cover, author, first-publication year, edition count, description or subjects, source link) and numbered inline citations. Hovering or clicking a citation opens a preview with the source name, title, author, first-published date, a description snippet and a "View source ↗" link. Follow-up questions work: "the second result", "the author of the first one" and "only ones with covers" all resolve against the cards the user actually saw.
 
 ## What I prioritized
 1. **Accuracy you can check.** The model may only state facts that came back from tools, and it cites them with registry ids (`[S3]`). The client throws away any id that isn't in the registry. URLs are built from Open Library work keys and never from model text. Questions the data can't answer (sales, ratings) get an explicit "not available in the data" response.
@@ -31,7 +31,7 @@ I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` som
 - Better retrieval: query rewriting, merging several searches (subject plus free text), and re-ranking by description quality and edition count. Fetch author bios for author questions.
 - Run the evaluation suite (`npm run eval`, already included) in CI on every prompt or model change, and grow it with real user questions.
 - Observability (traces of tool calls, token and cost tracking), and turn my headless-Chrome QA checks into a committed Playwright suite.
-- Accessibility pass (screen-reader text for citations, focus trapping in popovers) and dark mode.
+- Accessibility pass (screen-reader text for citations, focus trapping in popovers).
 
 ## Known limitations
 - Open Library's `first_publish_year` is the earliest edition it knows about, so it is sometimes wrong for translations or reissues. The bot attributes the date to Open Library.

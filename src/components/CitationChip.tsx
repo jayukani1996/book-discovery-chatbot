@@ -92,7 +92,7 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
           open ? "bg-accent text-on-accent" : "bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
         }`}
       >
-        {n}
+        [{n}]
       </button>
       {open &&
         pos &&

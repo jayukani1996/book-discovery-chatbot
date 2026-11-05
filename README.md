@@ -13,7 +13,7 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 Requires **Node.js 20.9+** (Next.js 16 requirement; an `.nvmrc` is included, so `nvm use` works).
 
 ```bash
-git clone <repo-url> && cd book-discovery-chat
+git clone <repo-url> book-chat && cd book-chat
 npm install
 cp .env.example .env.local        # then put your key in OPENAI_API_KEY
 npm run dev                       # http://localhost:3000
@@ -36,7 +36,7 @@ npm run build && npm start   # production build
 ```
 
 ### Deploy (Vercel)
-Import the repo in Vercel → add `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`) under *Environment Variables* → Deploy. No other configuration needed.
+Import the repo in Vercel → add `OPENAI_API_KEY` under *Environment Variables*, plus `OPENLIBRARY_CONTACT` (recommended) and optionally `OPENAI_MODEL` → Deploy. No other configuration needed.
 
 ---
 
@@ -69,11 +69,12 @@ src/
   lib/agent.ts             tool-calling loop, history building, guardrails
   lib/tools.ts             tool schemas + execution
   lib/openlibrary.ts       Open Library client (timeouts, retry, cache, normalization)
+  lib/applebooks.ts        Apple Books backup, used only when Open Library refuses
   lib/sources.ts           conversation source registry (stable S# ids)
   lib/citations.ts         citation parsing / validation / renumbering
   lib/prompt.ts            system prompt (grounding, citation, recommendation rules)
   components/              Chat shell, message renderer, citation popover, book cards
-tests/                     Vitest: citations, Open Library client, agent loop (fake OpenAI + fixtures)
+tests/                     Vitest: citations, Open Library and Apple Books clients, agent loop (fake OpenAI + fixtures)
 ```
 
 ## Required test scenarios
