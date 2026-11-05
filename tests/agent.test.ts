@@ -460,6 +460,16 @@ describe("guardrails", () => {
     });
   });
 
+  it("turns a record id written as a word into a citation", async () => {
+    const { bracketBareIds } = await import("@/lib/agent");
+    const reg = new SourceRegistry();
+    reg.upsertFromSearch({ workKey: "/works/OL1W", title: "A", authors: [], authorKeys: [] });
+    reg.upsertFromSearch({ workKey: "/works/OL2W", title: "B", authors: [], authorKeys: [] });
+    expect(bracketBareIds("No description for S1 and S2.", reg)).toBe("No description for [S1] and [S2].");
+    expect(bracketBareIds("Already fine [S1] and [S1, S2].", reg)).toBe("Already fine [S1] and [S1, S2].");
+    expect(bracketBareIds("The S9 and the S10 are not records.", reg)).toBe("The S9 and the S10 are not records.");
+  });
+
   it("removes a line the model repeated verbatim, and nothing else", async () => {
     const { dropRepeatedLines } = await import("@/lib/agent");
     expect(dropRepeatedLines("Only books.\nOnly books.")).toBe("Only books.");

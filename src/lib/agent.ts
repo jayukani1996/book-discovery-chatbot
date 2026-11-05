@@ -121,6 +121,14 @@ export function guardInventedChapters(answer: string, registry: SourceRegistry) 
   return `${intro} Its description says: "${short}" [${source.id}]`;
 }
 
+/** Record ids are internal. One written without brackets becomes a citation rather than showing as "S4". */
+export function bracketBareIds(answer: string, registry: SourceRegistry) {
+  return answer
+    .split(/(\[[^\]]*\])/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\bS\d+\b/g, (id) => (registry.has(id) ? `[${id}]` : id))))
+    .join("");
+}
+
 const WANTS_RECOMMENDATION = /recommend|suggest|\bbest\b|should i\b|good for|compare|\brank|\bpick\b/i;
 const REC_LABEL = "**Recommendation (AI suggestion):**";
 
@@ -318,7 +326,7 @@ async function runRounds(
 
   // Models occasionally repeat a line verbatim, or add advice to a plain search; never show those.
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const cleaned = ensureRecommendationLabel(dropUnaskedRecommendation(guardInventedChapters(dropRepeatedLines(answer), registry), lastUser), lastUser);
+  const cleaned = ensureRecommendationLabel(dropUnaskedRecommendation(guardInventedChapters(bracketBareIds(dropRepeatedLines(answer), registry), registry), lastUser), lastUser);
   if (cleaned !== answer) {
     answer = cleaned;
     emit({ type: "reset", content: answer });

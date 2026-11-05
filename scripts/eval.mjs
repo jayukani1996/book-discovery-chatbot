@@ -110,6 +110,7 @@ const INVARIANTS = [
   (t) => t.invalidIds.length === 0 || `cited unknown ids: ${t.invalidIds.join(", ")}`,
   (t) => !/https?:\/\//.test(t.text) || "model wrote a URL",
   (t) => !t.error || `error: ${t.error}`,
+  (t) => !/\bS\d+\b/.test(t.text.replace(/\[[^\]]*\]/g, "")) || "showed an internal record id as text",
   (t) => !/App note|Books displayed to the user|\{"ids"/.test(t.text) || "leaked internal note / tool JSON",
   (t) => t.cardUrls.every((u) => /^https:\/\/(openlibrary\.org\/works\/OL\d+W|books\.apple\.com\/us\/book\/id\d+)$/.test(u)) || "card link is not a source record URL",
   (t) => !(t.cards.length && t.cards.every((c) => c.sourceName === "Apple Books") && /first published (in|on) /i.test(t.text)) || "called an Apple Books date first publication",
