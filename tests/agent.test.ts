@@ -311,7 +311,7 @@ describe("guardrails", () => {
         { text: "More: [S1] [S2].", calls: [{ name: "show_books", args: { ids: ["S1", "S2"] } }] },
       ],
       {
-        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Show me more books by the author of the second result.")],
+        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Show me more books by this author.")],
         sources: Object.fromEntries(seen.all().map((b) => [b.id, b])),
       },
       mockFetch({ "search.json": rowlingSearch }),
@@ -361,6 +361,34 @@ describe("guardrails", () => {
     expect(r.requests).toHaveLength(0);
     expect(r.text).toContain("haven't shown you a list");
     expect(r.books).toBeUndefined();
+  });
+
+  it("answers a position past the end of the list itself", async () => {
+    const list = { role: "assistant" as const, content: "Books.", bookIds: ["S1", "S2", "S3"] };
+    const r = await run([{ text: "should not be called" }], { messages: [user("Find books."), list, user("Tell me more about the fifteenth result.")], sources: {} }, mockFetch({}));
+    expect(r.requests).toHaveLength(0);
+    expect(r.text).toContain("only showed 3 results");
+  });
+
+  it("leaves real positions and ordinary book questions to the model", async () => {
+    const { missingPositionReply } = await import("@/lib/agent");
+    const list = { role: "assistant" as const, content: "Books.", bookIds: ["S1", "S2", "S3"] };
+    const after = (q: string) => missingPositionReply({ messages: [user("Find books."), list, user(q)], sources: {} });
+    const fresh = (q: string) => missingPositionReply({ messages: [user(q)], sources: {} });
+    expect(after("Tell me more about the second result.")).toBeNull();
+    expect(after("Who wrote the third one?")).toBeNull();
+    expect(fresh("What is the second book in the Harry Potter series?")).toBeNull();
+    expect(fresh("What was J.K. Rowling's first book?")).toBeNull();
+    expect(fresh("Tell me more about the first book.")).toContain("haven't shown");
+  });
+
+  it("labels a recommendation that forgot its label, and nothing else", async () => {
+    const { ensureRecommendationLabel } = await import("@/lib/agent");
+    const label = "**Recommendation (AI suggestion):**";
+    expect(ensureRecommendationLabel("A looks best [S1].", "Which would be best for a beginner?")).toContain(label);
+    expect(ensureRecommendationLabel("A is from 1990 [S1].", "When was A published?")).not.toContain(label);
+    expect(ensureRecommendationLabel(`A [S1].\n\n${label} A.`, "Recommend one.").match(/Recommendation/g)).toHaveLength(1);
+    expect(ensureRecommendationLabel("I don't have enough information.", "Which is best?")).not.toContain(label);
   });
 
   it("removes a line the model repeated verbatim, and nothing else", async () => {

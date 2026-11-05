@@ -71,14 +71,34 @@ export function wantsNewBooks(body: ChatRequestBody) {
   return last?.role === "user" && WANTS_NEW_RE.test(last.content);
 }
 
-const POSITION_RE = /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(st|nd|rd|th))\s+(result|one|book|title)\b/i;
+const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
+// "the second result" at the end of a request, but not "the second book in the series" or "Rowling's first book".
+const POSITION_RE = new RegExp(`\\bthe\\s+(${ORDINALS.join("|")}|\\d+(?:st|nd|rd|th))\\s+(?:result|one|book|title)\\s*(?:[.?!,]|$)`, "i");
 export const NO_LIST_MESSAGE = "I haven't shown you a list of books in this conversation yet, so I can't tell which one you mean. What would you like to search for?";
 
-/** "The second result" with no list on screen has one honest answer, so it never reaches the model. */
-export function refersToMissingList(body: ChatRequestBody) {
+/** A position that can't exist has one honest answer, so it never reaches the model. */
+export function missingPositionReply(body: ChatRequestBody): string | null {
   const last = body.messages[body.messages.length - 1];
-  const hasList = body.messages.some((m) => (m.bookIds?.length ?? 0) > 0);
-  return last?.role === "user" && !hasList && POSITION_RE.test(last.content);
+  const match = last?.role === "user" ? last.content.match(POSITION_RE) : null;
+  if (!match) return null;
+  const lists = body.messages.filter((m) => (m.bookIds?.length ?? 0) > 0);
+  if (!lists.length) return NO_LIST_MESSAGE;
+  const list = [...lists].reverse().find((m) => m.bookIds!.length > 1) ?? lists[lists.length - 1];
+  const word = match[1].toLowerCase();
+  const position = ORDINALS.indexOf(word) + 1 || parseInt(word, 10);
+  const shown = list.bookIds!.length;
+  if (position <= shown) return null;
+  return `I only showed ${shown} result${shown === 1 ? "" : "s"}, so there isn't a ${word} one. Which of ${shown === 1 ? "them" : `the ${shown}`} would you like to know more about?`;
+}
+
+const WANTS_RECOMMENDATION = /recommend|suggest|\bbest\b|should i\b|good for|compare|\brank|\bpick\b/i;
+const REC_LABEL = "**Recommendation (AI suggestion):**";
+
+/** The brief requires opinions to be labelled, so a recommendation that forgot its label gets one. */
+export function ensureRecommendationLabel(answer: string, userMessage: string) {
+  if (!WANTS_RECOMMENDATION.test(userMessage) || answer.includes(REC_LABEL)) return answer;
+  if (!extractCitationIds(answer).length || /don['’]t have enough|do not have enough/i.test(answer)) return answer;
+  return `${answer.trimEnd()}\n\n${REC_LABEL} The choices above are my suggestion based on the available descriptions and subjects, not a ranking by sales or reviews.`;
 }
 
 export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): ChatCompletionMessageParam[] {
@@ -123,8 +143,9 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
 }
 
 export async function runAgent({ openai, model, body, emit, fetchImpl, signal }: AgentOptions): Promise<void> {
-  if (refersToMissingList(body)) {
-    emit({ type: "text", delta: NO_LIST_MESSAGE });
+  const positionReply = missingPositionReply(body);
+  if (positionReply) {
+    emit({ type: "text", delta: positionReply });
     return;
   }
   const registry = new SourceRegistry(body.sources);
@@ -216,7 +237,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
 
   // Models occasionally repeat a line verbatim, or add advice to a plain search; never show those.
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const cleaned = dropUnaskedRecommendation(dropRepeatedLines(answer), lastUser);
+  const cleaned = ensureRecommendationLabel(dropUnaskedRecommendation(dropRepeatedLines(answer), lastUser), lastUser);
   if (cleaned !== answer) {
     answer = cleaned;
     emit({ type: "reset", content: answer });

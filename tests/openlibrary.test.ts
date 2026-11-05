@@ -67,6 +67,20 @@ describe("searchBooks", () => {
     expect(r.hits.map((h) => h.title)).not.toContain("The Casual Vacancy");
   });
 
+  it("searches a title on its own as plain text, without a sort", async () => {
+    let seen = "";
+    const f = mockFetch({
+      "search.json": (url: string) => {
+        seen = url;
+        return new Response(JSON.stringify({ numFound: 0, docs: [] }));
+      },
+    });
+    await searchBooks({ title: "1984", sort: "editions" }, f);
+    expect(seen).toContain("q=1984");
+    expect(seen).not.toContain("title=");
+    expect(seen).not.toContain("sort=");
+  });
+
   it("rejects empty searches", async () => {
     await expect(searchBooks({}, mockFetch({}))).rejects.toThrow(/at least/);
   });

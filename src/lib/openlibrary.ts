@@ -226,13 +226,17 @@ export function normalizeSearchDoc(d: RawSearchDoc): OLSearchHit | null {
 export async function searchBooks(p: SearchParams, fetchImpl?: typeof fetch): Promise<{ total: number; hits: OLSearchHit[] }> {
   const limit = Math.min(Math.max(p.limit ?? 8, 1), 20);
   const qs = new URLSearchParams();
+  // On its own, the title field ranks poorly ("1984" sorted by editions finds a Peruvian civil code);
+  // plain text search puts the well-known work first.
+  const titleOnly = !!p.title && !p.query && !p.author && !p.subject;
   if (p.query) qs.set("q", p.query);
-  if (p.title) qs.set("title", p.title);
+  if (titleOnly) qs.set("q", p.title!);
+  else if (p.title) qs.set("title", p.title);
   if (p.author) qs.set("author", p.author);
   if (p.subject) qs.set("subject", p.subject);
   if (p.language) qs.set("language", p.language);
   if (![...qs.keys()].length) throw new OpenLibraryError("A search needs at least a query, title, author or subject.");
-  if (p.sort && p.sort !== "relevance") qs.set("sort", p.sort);
+  if (p.sort && p.sort !== "relevance" && !titleOnly) qs.set("sort", p.sort);
   // Over-fetch when filtering client-side so we can still return `limit` results.
   qs.set("limit", String(p.onlyWithCovers ? Math.min(limit * 3, 60) : limit));
   qs.set("fields", SEARCH_FIELDS);
