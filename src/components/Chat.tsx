@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "./useChat";
 import { AssistantMessage } from "./AssistantMessage";
+import { ThemeToggle } from "./ThemeToggle";
 
 const EXAMPLES = [
   "Find books by J.K. Rowling",
@@ -48,21 +49,30 @@ export function Chat() {
     <div className="flex h-dvh flex-col">
       <header className="shrink-0 border-b border-line/80 bg-paper/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
-          <div className="flex items-baseline gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink font-serif text-[13px] font-semibold text-paper" aria-hidden>
+              S
+            </span>
             <span className="font-serif text-xl font-semibold tracking-tight">Shelf</span>
             <span className="hidden text-[13px] text-ink-3 sm:inline">Book discovery, grounded in Open Library</span>
           </div>
-          {messages.length > 0 && (
-            <button
-              onClick={() => {
-                reset();
-                setInput("");
-              }}
-              className="rounded-lg border border-line px-3 py-1.5 text-[13px] text-ink-2 transition hover:bg-white"
-            >
-              New chat
-            </button>
-          )}
+          <div className="flex items-center gap-1.5">
+            {messages.length > 0 && (
+              <button
+                onClick={() => {
+                  reset();
+                  setInput("");
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[13px] text-ink-2 transition hover:border-ink-3/40 hover:bg-surface hover:text-ink"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
+                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+                </svg>
+                New chat
+              </button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
@@ -111,7 +121,7 @@ export function Chat() {
                 <button
                   key={q}
                   onClick={() => submit(q)}
-                  className="shrink-0 rounded-full border border-line bg-white/60 px-3 py-1 text-[12.5px] text-ink-2 transition hover:border-ink-3/40 hover:bg-white"
+                  className="shrink-0 rounded-full border border-line bg-surface/60 px-3 py-1 text-[12.5px] text-ink-2 transition hover:-translate-y-px hover:border-accent/40 hover:bg-surface hover:text-ink"
                 >
                   {q}
                 </button>
@@ -123,7 +133,7 @@ export function Chat() {
               e.preventDefault();
               submit();
             }}
-            className="flex items-end gap-2 rounded-2xl border border-line bg-white p-2 shadow-sm transition focus-within:border-ink-3/50 focus-within:shadow-md"
+            className="elevated flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 transition focus-within:border-ink-3/60"
           >
             <label htmlFor="chat-input" className="sr-only">
               Ask about books
@@ -142,7 +152,7 @@ export function Chat() {
               rows={1}
               maxLength={2000}
               placeholder={messages.length ? "Ask a follow-up…" : "Ask about books, authors or topics…"}
-              className="max-h-[180px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] outline-none placeholder:text-ink-3"
+              className="max-h-[180px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-ink caret-accent outline-none placeholder:text-ink-3"
               autoFocus
             />
             {loading ? (
@@ -158,7 +168,7 @@ export function Chat() {
                 type="submit"
                 disabled={!input.trim()}
                 aria-label="Send message"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink text-paper transition hover:bg-ink/85 disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-3"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent transition hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-3 disabled:active:scale-100"
               >
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                   <path d="M10 3.5a.75.75 0 0 1 .53.22l5 5a.75.75 0 1 1-1.06 1.06l-3.72-3.72v9.69a.75.75 0 0 1-1.5 0V6.06L5.53 9.78a.75.75 0 0 1-1.06-1.06l5-5A.75.75 0 0 1 10 3.5Z" />
@@ -178,6 +188,11 @@ export function Chat() {
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   return (
     <div className="fade-up pt-[8vh] text-center">
+      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent" aria-hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-6 w-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.04A8.97 8.97 0 0 0 6 3.75c-1.05 0-2.06.18-3 .51v14.25A8.99 8.99 0 0 1 6 18c2.3 0 4.4.87 6 2.29m0-14.25a8.97 8.97 0 0 1 6-2.29c1.05 0 2.06.18 3 .51v14.25A8.99 8.99 0 0 0 18 18a8.97 8.97 0 0 0-6 2.29m0-14.25v14.25" />
+        </svg>
+      </div>
       <h1 className="font-serif text-[34px] font-semibold leading-tight tracking-tight">What would you like to read?</h1>
       <p className="mx-auto mt-3 max-w-md text-[15px] text-ink-2">
         Search by author, title or topic. Every fact links back to its Open Library record — hover a citation to check it.
@@ -187,9 +202,12 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
           <button
             key={q}
             onClick={() => onPick(q)}
-            className="rounded-xl border border-line bg-white/60 px-4 py-3 text-left text-[14px] text-ink-2 transition hover:border-ink-3/40 hover:bg-white hover:text-ink"
+            className="group flex items-center justify-between gap-3 rounded-xl border border-line bg-surface/60 px-4 py-3 text-left text-[14px] text-ink-2 transition hover:-translate-y-px hover:border-accent/40 hover:bg-surface hover:text-ink"
           >
-            {q}
+            <span>{q}</span>
+            <span className="text-ink-3 opacity-0 transition group-hover:translate-x-0.5 group-hover:text-accent group-hover:opacity-100" aria-hidden>
+              →
+            </span>
           </button>
         ))}
       </div>

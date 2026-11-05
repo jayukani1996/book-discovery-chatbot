@@ -15,7 +15,7 @@ const W = 300;
 export function CitationChip({ n, source }: { n: number; source?: BookSource }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -24,8 +24,8 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
     const r = btn.current?.getBoundingClientRect();
     if (!r) return;
     const left = Math.min(Math.max(8, r.left + r.width / 2 - W / 2), window.innerWidth - W - 8);
-    const above = r.top > 260;
-    setPos({ left, top: above ? r.top - 8 : r.bottom + 8, above });
+    // Anchor with bottom (not a transform): the entrance animation animates transform and would override it.
+    setPos(r.top > 260 ? { left, bottom: window.innerHeight - r.top + 8 } : { left, top: r.bottom + 8 });
   }, []);
 
   useLayoutEffect(() => {
@@ -89,7 +89,7 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
           }
         }}
         className={`mx-[1px] inline-flex h-[17px] min-w-[17px] -translate-y-[1px] items-center justify-center rounded-[5px] px-1 align-middle text-[10.5px] font-semibold leading-none transition ${
-          open ? "bg-accent text-white" : "bg-accent-soft text-accent hover:bg-accent hover:text-white"
+          open ? "bg-accent text-on-accent" : "bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
         }`}
       >
         {n}
@@ -103,8 +103,8 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
           role="dialog"
           onMouseEnter={enter}
           onMouseLeave={leave}
-          style={{ left: pos.left, top: pos.top, width: W, transform: pos.above ? "translateY(-100%)" : undefined }}
-          className="fade-up fixed z-50 rounded-xl border border-line bg-white p-3.5 text-left shadow-xl shadow-black/10"
+          style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: W }}
+          className="elevated fade-up fixed z-50 rounded-xl border border-line bg-surface p-3.5 text-left"
         >
           <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" /> Open Library

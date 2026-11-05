@@ -90,7 +90,7 @@ function AssistantMessageImpl({ message, sources, streaming, status, onAsk, onRe
         )}
 
         {message.error && (
-          <div className="mt-3 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-[13.5px] text-red-800" role="alert">
+          <div className="mt-3 flex items-start gap-3 rounded-lg border border-danger-line bg-danger-bg px-3 py-2.5 text-[13.5px] text-danger-ink" role="alert">
             <span className="mt-[1px]">⚠</span>
             <div className="flex-1">
               <div>{message.error}</div>

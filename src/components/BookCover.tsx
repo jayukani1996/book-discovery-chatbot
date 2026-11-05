@@ -8,6 +8,7 @@ const PALETTE = ["#7c2d12", "#1e3a5f", "#3f5f3a", "#5b3a6b", "#7a5a1e", "#2f4f4f
 /** Cover image with a typographic fallback when Open Library has no cover (or it fails to load). */
 export function BookCover({ coverId, title, size = "M", className = "" }: { coverId?: number; title: string; size?: "S" | "M" | "L"; className?: string }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const url = coverUrl(coverId, size);
 
   if (!url || failed) {
@@ -47,8 +48,13 @@ export function BookCover({ coverId, title, size = "M", className = "" }: { cove
       onLoad={(e) => {
         // OL returns a 1x1 placeholder for some missing covers.
         if ((e.currentTarget as HTMLImageElement).naturalWidth < 5) setFailed(true);
+        else setLoaded(true);
       }}
-      className={`rounded-[3px] bg-paper-2 object-cover shadow-sm ring-1 ring-black/5 ${className}`}
+      ref={(el) => {
+        // Cached images can finish before React attaches onLoad.
+        if (el?.complete && el.naturalWidth >= 5 && !loaded) setLoaded(true);
+      }}
+      className={`rounded-[3px] object-cover shadow-sm ring-1 ring-black/5 transition-opacity duration-300 dark:ring-white/10 ${loaded ? "bg-paper-2" : "shimmer"} ${className}`}
     />
   );
 }

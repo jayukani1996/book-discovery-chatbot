@@ -23,7 +23,7 @@ export class OpenLibraryError extends Error {}
 const cache = new Map<string, { at: number; data: unknown }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch): Promise<T> {
+async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch, hops = 0): Promise<T> {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data as T;
 
@@ -44,7 +44,12 @@ async function getJson<T>(url: string, fetchImpl: typeof fetch = fetch): Promise
       if (res.status === 429 || /verify_human/.test(location)) {
         throw new OpenLibraryError("Open Library is temporarily limiting requests (anti-bot check). Please try again in a minute.");
       }
-      if (res.status >= 300 && res.status < 400) throw new Error(`unexpected redirect to ${location || "?"}`);
+      if (res.status >= 300 && res.status < 400) {
+        // Ordinary redirects (e.g. merged works) are followed, but only within Open Library.
+        const next = location ? new URL(location, url) : null;
+        if (!next || next.origin !== BASE || hops >= 3) throw new Error("unexpected redirect");
+        return await getJson<T>(next.href, fetchImpl, hops + 1);
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if ((res.headers.get("content-type") ?? "").includes("text/html")) throw new Error("non-JSON response");
       const data = (await res.json()) as T;

@@ -1,16 +1,112 @@
 @import "tailwindcss";
 
-@theme {
-  --color-paper: #faf7f2;
-  --color-paper-2: #f3eee5;
-  --color-ink: #1f1b16;
-  --color-ink-2: #5b5348;
-  --color-ink-3: #8a8174;
-  --color-line: #e6dfd3;
-  --color-accent: #9a3412;
-  --color-accent-soft: #fbeee6;
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Components only use these names, so both themes come from one palette. */
+:root {
+  --paper: #faf7f2;
+  --paper-2: #f3eee5;
+  --surface: #ffffff;
+  --ink: #1f1b16;
+  --ink-2: #5b5348;
+  --ink-3: #6f665a;
+  --line: #e6dfd3;
+  --accent: #9a3412;
+  --accent-soft: #fbeee6;
+  --on-accent: #ffffff;
+  --danger-bg: #fef2f2;
+  --danger-line: #fecaca;
+  --danger-ink: #991b1b;
+  --shadow: 28 20 12;
+  color-scheme: light;
+}
+.dark {
+  --paper: #151311;
+  --paper-2: #211e1a;
+  --surface: #1c1916;
+  --ink: #efe8dc;
+  --ink-2: #bdb3a5;
+  --ink-3: #8f8577;
+  --line: #322d27;
+  --accent: #f2a06d;
+  --accent-soft: #3a261b;
+  --on-accent: #1a110b;
+  --danger-bg: #2a1515;
+  --danger-line: #5c2626;
+  --danger-ink: #fca5a5;
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-line: var(--danger-line);
+  --color-danger-ink: var(--danger-ink);
   --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Tailwind v4 dropped the pointer cursor on buttons; interactive things should look interactive. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+summary,
+label[for] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Visible keyboard focus everywhere, never on mouse click. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+textarea:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Smooth theme switch, without animating every hover. */
+.theme-transition,
+.theme-transition * {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease !important;
+}
+
+.elevated {
+  box-shadow: 0 1px 2px rgb(var(--shadow) / 0.06), 0 8px 24px -12px rgb(var(--shadow) / 0.18);
+}
+.dark .elevated {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.7);
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--paper-2) 25%, color-mix(in srgb, var(--paper-2) 60%, var(--surface)) 50%, var(--paper-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
 html,
@@ -108,6 +204,10 @@ body {
 .scrollbar-thin::-webkit-scrollbar {
   height: 6px;
   width: 6px;
+}
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--color-line);

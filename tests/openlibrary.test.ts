@@ -77,6 +77,19 @@ describe("Open Library anti-bot handling", () => {
     expect(calls).toBe(1);
   });
 
+  it("follows ordinary redirects within Open Library (merged works)", async () => {
+    const f = (async (u: string) =>
+      u.includes("OL1W")
+        ? new Response(null, { status: 301, headers: { location: "/works/OL2W.json" } })
+        : new Response(JSON.stringify({ title: "Merged", authors: [] }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    await expect(getWork("/works/OL1W", f)).resolves.toMatchObject({ title: "Merged" });
+  });
+
+  it("refuses to follow a redirect to another site", async () => {
+    const f = (async () => new Response(null, { status: 302, headers: { location: "https://evil.example/x.json" } })) as unknown as typeof fetch;
+    await expect(getWork("/works/OL1W", f)).rejects.toThrow(/unavailable right now/);
+  });
+
   it("treats an HTML page as unavailable rather than crashing on JSON parsing", async () => {
     clearOpenLibraryCache();
     const f = (async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
