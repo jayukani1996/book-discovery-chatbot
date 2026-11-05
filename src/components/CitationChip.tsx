@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { BookSource } from "@/lib/types";
 import { BookCover } from "./BookCover";
 import { consistentPublishDate } from "@/lib/format";
@@ -93,7 +94,10 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
       >
         {n}
       </button>
-      {open && pos && (
+      {open &&
+        pos &&
+        // Portal: the preview contains block elements, which can't live inside the answer's <p>.
+        createPortal(
         <div
           ref={pop}
           role="dialog"
@@ -136,8 +140,9 @@ export function CitationChip({ n, source }: { n: number; source?: BookSource }) 
           >
             View source ↗
           </a>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }

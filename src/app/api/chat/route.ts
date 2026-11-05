@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { runAgent, friendlyError } from "@/lib/agent";
+import { clientIp, rateLimit } from "@/lib/rateLimit";
 import type { ChatRequestBody, StreamEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -27,6 +28,14 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const limit = rateLimit(clientIp(req));
+  if (!limit.ok) {
+    return Response.json(
+      { error: `You're sending messages too quickly. Please wait ${limit.retryAfterSec}s and try again.` },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSec) } },
+    );
+  }
+
   let body: ChatRequestBody;
   try {
     const parsed = BodySchema.safeParse(await req.json());

@@ -2,6 +2,8 @@
 
 A conversational book-discovery app. Ask about authors, titles and topics; answers are grounded in **Open Library** data, every fact carries an **inline citation** with a hover/click preview, and AI opinions are clearly labeled as suggestions.
 
+![Shelf answering "Find books by J.K. Rowling" with inline citations and the Open Library source preview](docs/screenshot.png)
+
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · OpenAI Chat Completions (tool calling, streaming) · Open Library API · Vitest
 
 ---
@@ -20,12 +22,14 @@ npm run dev                       # http://localhost:3000
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `OPENAI_API_KEY` | yes | — | Server-side only; never sent to the browser. |
+| `RATE_LIMIT_PER_MINUTE` | no | `20` | Per-IP request limit for `/api/chat`, which protects the key on a public demo link. |
 | `OPENAI_MODEL` | no | `gpt-5.4-mini` | Any Chat Completions model with tool calling. If the key can't access the configured model, the app falls back to `gpt-4.1-mini` automatically. |
 
 Other scripts:
 
 ```bash
-npm test          # unit + agent-loop tests (no network, no API key needed)
+npm test          # 30 unit + agent-loop tests (no network, no API key needed)
+npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
 ```
@@ -85,6 +89,15 @@ tests/                     Vitest: citations, Open Library client, agent loop (f
 
 All scenarios above, plus the other example questions from the brief ("Show me more books by the author of the second result", "Tell me more about the first book", "Which of these would be best for a beginner?", "When was The Left Hand of Darkness first published?"), were run end-to-end against the live OpenAI API and Open Library. I also checked that no answer cited an unknown id or contained a model-written URL, that citations sat inline, and that recommendations carried the label. `gpt-5.4-mini` was picked as the default after comparing it with `gpt-4.1-mini` and `gpt-4.1` on this run. The smaller/older models sometimes skipped citations or the recommendation label.
 
+## Testing
+
+| Layer | Command | What it covers |
+|---|---|---|
+| Unit / agent | `npm test` | Citation parsing and renumbering, invented-id dropping, Open Library normalization, the agent loop with a fake OpenAI client, the guardrails (preamble reset, card fallback, tampered-record rejection), the rate limiter |
+| Live eval | `npm run dev` then `npm run eval` | 17 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
+
 ## Security notes
-- The API key lives only in server env vars; `.env*` is git-ignored.
+- The API key lives only in server env vars; `.env*` is git-ignored. Verified absent from the client bundle.
+- `/api/chat` is rate-limited per IP (default 20/min) so a public demo link can't drain the key.
+- Book records the client sends back are revalidated: work keys must match `/works/OL…W`, and links are rebuilt server-side, never trusted from the client.
 - Request bodies are validated and size-capped; Open Library links are generated from work keys, never from model output; markdown links in answers open in a new tab with `rel="noopener noreferrer"`.

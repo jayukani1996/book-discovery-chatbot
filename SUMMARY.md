@@ -13,6 +13,13 @@
 ## Tradeoff worth discussing
 I chose **Open Library search plus on-demand detail fetches** over pre-indexing a vector store. The upside: it's always current, there's no infrastructure, and every claim traces to a live record. The downside: search relevance depends on Open Library's ranking. For example, the "artificial intelligence" subject returns some academic titles. The model has to pick from what comes back and can't do a semantic search over the whole catalogue. A second tradeoff: conversation state (transcript plus registry) lives in the client, which keeps the server stateless and easy to deploy. Before production I'd move it server-side so a client can't tamper with source records.
 
+## How I tested it
+- **Unit and agent tests** (`npm test`, 30 tests, no network): citation parsing, Open Library normalization, the agent loop with a fake OpenAI client, and the guardrails.
+- **Live evaluation suite** (`npm run eval`, 17 turns): the 7 required scenarios plus adversarial cases (fabrication pressure, prompt injection, impossible ordinals, no results, off-topic). It checks invariants on every turn: no unknown citation ids, no model-written URLs, no leaked internals, and card links that are Open Library work URLs. It passes 17/17 repeatedly, with a median answer time of about 3 s.
+- **Browser QA** in headless Chrome at desktop and mobile sizes, 24 checks: loading state, citation preview on hover, keyboard focus, click and tap, Escape and click-outside, refresh persistence, Stop, New chat, a network failure followed by Try again, missing-cover placeholders, no horizontal overflow on mobile, and zero console errors.
+
+Bugs this testing found and fixed: an invented chapter-by-chapter summary when the user pushed for one, conversation history being wiped on refresh, invalid HTML nesting in the citation preview, a re-search when the user asked for a result position that didn't exist, citation clutter, and inconsistent first-publication dates between Open Library endpoints.
+
 ## Model choice
 I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` sometimes grouped all citations at the end, skipped the recommendation label, or leaked tool JSON into the answer. `gpt-4.1` answered some factual questions without citations. `gpt-5.4-mini` cited every factual answer inline and labeled every recommendation, at 2–7 s per answer, so it is the default. If a key can't access it, the server falls back to `gpt-4.1-mini` automatically. I also added code-level guardrails so correctness doesn't rest on the prompt alone: preamble text is discarded before more tool calls, cards fall back to cited records, and invented ids are dropped.
 
@@ -20,8 +27,8 @@ I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` som
 - **Automatic grounding check.** A post-answer verifier that confirms each cited sentence's numbers and names appear in the cited record, flagging or regenerating when they don't.
 - Server-side sessions (Redis/Postgres), auth, rate limiting per user, and a shared cache for Open Library responses.
 - Better retrieval: query rewriting, merging several searches (subject plus free text), and re-ranking by description quality and edition count. Fetch author bios for author questions.
-- An evaluation harness: a scripted run of the 7 required scenarios plus adversarial prompts, scored on citation validity and refusals. Run it in CI on every prompt or model change.
-- Observability (traces of tool calls, token and cost tracking), plus Playwright end-to-end tests against recorded fixtures.
+- Run the evaluation suite (`npm run eval`, already included) in CI on every prompt or model change, and grow it with real user questions.
+- Observability (traces of tool calls, token and cost tracking), and turn my headless-Chrome QA checks into a committed Playwright suite.
 - Accessibility pass (screen-reader text for citations, focus trapping in popovers) and dark mode.
 
 ## Known limitations
@@ -29,6 +36,8 @@ I ran the required scenarios end-to-end against three models. `gpt-4.1-mini` som
 - Many works have no description, so "tell me more" or "best for beginners" can only use titles and subjects. The bot says when that's the case.
 - Grounding is enforced by the prompt plus citation validation, not proven sentence by sentence. A model could still paraphrase a record loosely.
 - Conversation history sent to the model is capped at the last 16 messages and 40 known records.
+- The rate limit (20 requests/minute per IP) is in memory per server instance, so it protects a demo but isn't a production quota system.
+- Open Library data has its own errors (e.g. *Song of Solomon* listed as first published in 1634, SparkNotes listed as a co-author of *Kindred*). The bot reports the data faithfully and flags clearly implausible dates.
 
 ## Time spent
 ~X hours *(fill in)*

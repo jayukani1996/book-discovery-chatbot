@@ -31,6 +31,18 @@ describe("processCitations", () => {
     expect(processCitations("See [this](https://x.y) [note]", isKnown).markdown).toBe("See [this](https://x.y) [note]");
   });
 
+  it("drops a blanket cluster when every id is already cited on its own", () => {
+    const k = (id: string) => /^S[1-5]$/.test(id);
+    const r = processCitations("Books by X [S1][S2][S3][S4]:\n- A [S1]\n- B [S2]\n- C [S3]\n- D [S4]", k);
+    expect(r.markdown).toBe("Books by X:\n- A [1](#cite-S1)\n- B [2](#cite-S2)\n- C [3](#cite-S3)\n- D [4](#cite-S4)");
+  });
+
+  it("caps an uncovered cluster at three markers plus a count", () => {
+    const k = (id: string) => /^S[1-5]$/.test(id);
+    const r = processCitations("None of these list sales [S1][S2] [S3, S4, S5].", k);
+    expect(r.markdown).toBe("None of these list sales [1](#cite-S1)[2](#cite-S2)[3](#cite-S3)[+2](#cite-more).");
+  });
+
   it("extracts cited ids", () => {
     expect(extractCitationIds("x [S1] y [S2; s3]")).toEqual(["S1", "S2", "S3"]);
   });

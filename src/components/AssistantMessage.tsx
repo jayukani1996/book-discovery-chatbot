@@ -26,6 +26,13 @@ function AssistantMessageImpl({ message, sources, streaming, status, onAsk, onRe
   const components = useMemo<Components>(
     () => ({
       a: ({ href, children }) => {
+        if (href === "#cite-more") {
+          return (
+            <span className="mx-[1px] align-middle text-[10.5px] font-medium text-ink-3" title="More records support this sentence">
+              {children}
+            </span>
+          );
+        }
         if (href?.startsWith("#cite-")) {
           const id = href.slice(6);
           return <CitationChip n={order.indexOf(id) + 1} source={sources[id]} />;

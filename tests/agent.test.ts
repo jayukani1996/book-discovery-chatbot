@@ -113,12 +113,21 @@ describe("runAgent", () => {
       {
         messages: [user("Who wrote Kindred?")],
         sources: {
-          S3: { id: "S3", workKey: "/works/OLX", title: "Old", authors: [], authorKeys: [], url: "u", sourceName: "Open Library" },
+          S3: { id: "S3", workKey: "/works/OL1W", title: "Old", authors: [], authorKeys: [], url: "javascript:alert(1)", sourceName: "Open Library" },
         },
       },
       mockFetch({ "search.json": kindredSearch, "/works/OL1914022W.json": kindredWork }),
     );
     expect(Object.keys(r.sources)).toEqual(["S4"]);
+  });
+
+  it("never trusts a client-supplied link for a stored record", () => {
+    const reg = new SourceRegistry({
+      S1: { id: "S1", workKey: "/works/OL1W", title: "T", authors: [], authorKeys: [], url: "javascript:alert(1)", sourceName: "Open Library" },
+      S2: { id: "S2", workKey: "javascript:x", title: "T", authors: [], authorKeys: [], url: "x", sourceName: "Open Library" },
+    } as never);
+    expect(reg.get("S1")?.url).toBe("https://openlibrary.org/works/OL1W");
+    expect(reg.has("S2")).toBe(false);
   });
 
   it("tells the model when Open Library fails instead of throwing", async () => {

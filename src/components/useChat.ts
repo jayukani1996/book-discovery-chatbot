@@ -20,7 +20,8 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
-  const hydrated = useRef(false);
+  // State (not a ref) so the save effect can't run before the restored conversation is applied.
+  const [hydrated, setHydrated] = useState(false);
 
   // Restore the conversation after a refresh.
   useEffect(() => {
@@ -32,15 +33,15 @@ export function useChat() {
         if (p.sources && typeof p.sources === "object") setSources(p.sources);
       }
     } catch {}
-    hydrated.current = true;
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated.current || loading) return;
+    if (!hydrated || loading) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, sources } satisfies Persisted));
     } catch {}
-  }, [messages, sources, loading]);
+  }, [messages, sources, loading, hydrated]);
 
   const run = useCallback(async (history: ChatMessage[]) => {
     const assistantId = uid();

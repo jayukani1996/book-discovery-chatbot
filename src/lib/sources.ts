@@ -16,8 +16,10 @@ export class SourceRegistry {
   readonly touched = new Set<string>();
 
   constructor(initial: Record<string, BookSource> = {}) {
-    for (const s of Object.values(initial)) {
+    for (let s of Object.values(initial)) {
       if (!isValidSource(s)) continue;
+      // Client-held records are untrusted: rebuild the link and source name rather than trusting them.
+      s = { ...s, url: workUrl(s.workKey), sourceName: "Open Library" };
       this.byId.set(s.id, s);
       this.byWork.set(s.workKey, s.id);
       const n = Number(s.id.slice(1));
@@ -92,7 +94,7 @@ function isValidSource(s: unknown): s is BookSource {
     typeof o.id === "string" &&
     /^S\d+$/.test(o.id) &&
     typeof o.workKey === "string" &&
-    o.workKey.startsWith("/works/") &&
+    /^\/works\/OL\d+W$/.test(o.workKey) &&
     typeof o.title === "string" &&
     Array.isArray(o.authors)
   );
