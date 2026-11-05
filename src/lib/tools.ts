@@ -71,6 +71,8 @@ export interface ToolContext {
   shownIds: string[] | null;
   /** Ids the user has already seen as cards in this conversation. */
   alreadyShown?: Set<string>;
+  /** The user asked for more books: searches leave out the ones they've already seen. */
+  onlyNewBooks?: boolean;
   /** Set when Open Library could not be reached during this request. */
   sourceFailed?: boolean;
 }
@@ -109,7 +111,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           author: str(args.author),
           subject: str(args.subject),
           sort: (["relevance", "editions", "new", "old"] as const).find((s) => s === args.sort),
-          limit: typeof args.limit === "number" ? args.limit : undefined,
+          limit: ctx.onlyNewBooks ? 20 : typeof args.limit === "number" ? args.limit : undefined,
           onlyWithCovers: args.only_with_covers === true,
           language: str(args.language),
         };
@@ -118,15 +120,17 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
           if (e instanceof OpenLibraryUnavailableError) return searchAppleBooks(params, ctx.fetchImpl);
           throw e;
         });
-        const records = hits.map((h) => {
-          const record = sourceForModel(ctx.registry.upsertFromSearch(h));
-          return ctx.alreadyShown?.has(record.id) ? { ...record, already_shown: true } : record;
-        });
+        const records = hits
+          .map((h) => {
+            const record = sourceForModel(ctx.registry.upsertFromSearch(h));
+            return ctx.alreadyShown?.has(record.id) ? { ...record, already_shown: true } : record;
+          })
+          .filter((r) => !(ctx.onlyNewBooks && "already_shown" in r));
         return {
           total_matches: total,
           returned: records.length,
           results: records,
-          note: records.length ? undefined : "No matching books found.",
+          note: records.length ? undefined : ctx.onlyNewBooks && hits.length ? "The user has already seen every result; tell them there are no others." : "No matching books found.",
         };
       }
 

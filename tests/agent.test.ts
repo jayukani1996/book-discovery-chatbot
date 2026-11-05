@@ -301,14 +301,43 @@ describe("guardrails", () => {
     expect(r.books).toEqual(["S1", "S2"]);
   });
 
-  it("marks search results the user has already seen, so 'more books' can skip them", async () => {
+  it("'show me more' only gives the model and the cards books the user hasn't seen", async () => {
+    const seen = new SourceRegistry();
+    const first = rowlingSearch.docs[0];
+    seen.upsertFromSearch({ workKey: first.key, title: first.title!, authors: first.author_name!, authorKeys: [] });
+    const r = await run(
+      [
+        { calls: [{ name: "search_books", args: { author: "J.K. Rowling", limit: 2 } }] },
+        { text: "More: [S1] [S2].", calls: [{ name: "show_books", args: { ids: ["S1", "S2"] } }] },
+      ],
+      {
+        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Show me more books by the author of the second result.")],
+        sources: Object.fromEntries(seen.all().map((b) => [b.id, b])),
+      },
+      mockFetch({ "search.json": rowlingSearch }),
+    );
+    const toolMsg = (r.requests[1].messages as { role: string; content: string }[]).find((m) => m.role === "tool")!;
+    const ids = (JSON.parse(toolMsg.content).results as { id: string }[]).map((b) => b.id);
+    expect(ids).not.toContain("S1");
+    expect(ids.length).toBeGreaterThan(0);
+    expect(r.books).toEqual(["S2"]);
+  });
+
+  it("'tell me more' is not mistaken for a request for new books", async () => {
+    const { wantsNewBooks } = await import("@/lib/agent");
+    expect(wantsNewBooks({ messages: [user("Tell me more about the second result.")], sources: {} })).toBe(false);
+    expect(wantsNewBooks({ messages: [user("Show me more books by the author of the second result.")], sources: {} })).toBe(true);
+    expect(wantsNewBooks({ messages: [user("Any other books like this?")], sources: {} })).toBe(true);
+  });
+
+  it("marks search results the user has already seen", async () => {
     const seen = new SourceRegistry();
     const first = rowlingSearch.docs[0];
     seen.upsertFromSearch({ workKey: first.key, title: first.title!, authors: first.author_name!, authorKeys: [] });
     const r = await run(
       [{ calls: [{ name: "search_books", args: { author: "J.K. Rowling" } }] }, { text: "Here are more." }],
       {
-        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Show me more.")],
+        messages: [user("Find books by J.K. Rowling."), { role: "assistant", content: "One [S1].", bookIds: ["S1"] }, user("Search for her again.")],
         sources: Object.fromEntries(seen.all().map((b) => [b.id, b])),
       },
       mockFetch({ "search.json": rowlingSearch }),

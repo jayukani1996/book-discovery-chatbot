@@ -64,6 +64,13 @@ export function dropUnaskedRecommendation(answer: string, userMessage: string) {
   return answer.replace(/\n*\*\*Recommendation \(AI suggestion\):\*\*[^\n]*(\n(?!\n)[^\n]*)*/g, "").trimEnd();
 }
 
+const WANTS_NEW_RE = /\b(more|other|additional)\s+(books?|titles?|results?)\b|\bshow (me )?more\b/i;
+/** "Show me more books…": the user wants books they haven't seen, which the model can't be relied on to track. */
+export function wantsNewBooks(body: ChatRequestBody) {
+  const last = body.messages[body.messages.length - 1];
+  return last?.role === "user" && WANTS_NEW_RE.test(last.content);
+}
+
 const POSITION_RE = /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(st|nd|rd|th))\s+(result|one|book|title)\b/i;
 export const NO_LIST_MESSAGE = "I haven't shown you a list of books in this conversation yet, so I can't tell which one you mean. What would you like to search for?";
 
@@ -83,6 +90,7 @@ export function buildMessages(body: ChatRequestBody, registry: SourceRegistry): 
     .all()
     .sort((a, b) => Number(b.id.slice(1)) - Number(a.id.slice(1)))
     .slice(0, MAX_CONTEXT_RECORDS)
+    .filter((s) => !(wantsNewBooks(body) && seen.has(s.id)))
     .map((s) => (seen.has(s.id) ? { ...sourceForModel(s), already_shown: true } : sourceForModel(s)));
   if (known.length) {
     msgs.push({
@@ -121,7 +129,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
   }
   const registry = new SourceRegistry(body.sources);
   const alreadyShown = new Set(body.messages.flatMap((m) => m.bookIds ?? []));
-  const ctx: ToolContext = { registry, fetchImpl, shownIds: null, alreadyShown };
+  const ctx: ToolContext = { registry, fetchImpl, shownIds: null, alreadyShown, onlyNewBooks: wantsNewBooks(body) };
   const messages = buildMessages(body, registry);
   let answer = "";
 
@@ -231,6 +239,7 @@ export async function runAgent({ openai, model, body, emit, fetchImpl, signal }:
   const cited = extractCitationIds(answer).filter((id) => registry.has(id));
   const cardsMatchText = ctx.shownIds?.length && (!cited.length || ctx.shownIds.some((id) => cited.includes(id)));
   let shownIds = cardsMatchText ? ctx.shownIds! : cited;
+  if (ctx.onlyNewBooks) shownIds = shownIds.filter((id) => !alreadyShown.has(id));
   // Same safety net for the cover filter: re-show the last result list, minus books without covers.
   if (!shownIds.length && !ctx.shownIds) shownIds = coverFilterFallback(body, registry);
   if (shownIds.length) emit({ type: "books", ids: shownIds });
