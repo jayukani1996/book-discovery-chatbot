@@ -1,5 +1,6 @@
 "use client";
 
+import { postWithRetry } from "@/lib/postWithRetry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookSource, ChatMessage, StreamEvent } from "@/lib/types";
 
@@ -56,7 +57,7 @@ export function useChat() {
     abortRef.current = ctrl;
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await postWithRetry("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: ctrl.signal,

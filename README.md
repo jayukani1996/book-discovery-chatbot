@@ -33,7 +33,7 @@ npm run dev                       # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test          # 68 unit + agent-loop tests (no network, no API key needed)
+npm test          # 74 unit + agent-loop tests (no network, no API key needed)
 npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
@@ -73,6 +73,7 @@ src/
   lib/agent.ts             tool-calling loop, history building, guardrails
   lib/tools.ts             tool schemas + execution
   lib/openlibrary.ts       Open Library client (timeouts, retry, cache, normalization)
+  lib/postWithRetry.ts     retries a request once if the connection drops
   lib/applebooks.ts        Apple Books backup, used only when Open Library refuses
   lib/sources.ts           conversation source registry (stable S# ids)
   lib/citations.ts         citation parsing / validation / renumbering
