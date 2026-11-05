@@ -4,6 +4,8 @@ A conversational book-discovery app. Ask about authors, titles and topics; answe
 
 ![Shelf answering "Find books by J.K. Rowling" with inline citations and the Open Library source preview](docs/screenshot.png)
 
+**Live demo:** https://book-discovery-chatbot.vercel.app
+
 **Submission summary** (what was built, priorities, limitations, time spent, AI tools): [SUMMARY.md](SUMMARY.md)
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · OpenAI Chat Completions (tool calling, streaming) · Open Library API (Apple Books as a backup) · Vitest
@@ -31,7 +33,7 @@ npm run dev                       # http://localhost:3000
 Other scripts:
 
 ```bash
-npm test          # 60 unit + agent-loop tests (no network, no API key needed)
+npm test          # 62 unit + agent-loop tests (no network, no API key needed)
 npm run eval      # live evaluation: required + adversarial scenarios against a running app (needs the key)
 npm run lint      # TypeScript type-check
 npm run build && npm start   # production build
@@ -98,7 +100,7 @@ All scenarios above, plus the other example questions from the brief ("Show me m
 | Layer | Command | What it covers |
 |---|---|---|
 | Unit / agent | `npm test` | Citation parsing and renumbering, invented-id dropping, Open Library normalization, the agent loop with a fake OpenAI client, the guardrails (preamble reset, card fallback, tampered-record rejection), the rate limiter |
-| Live eval | `npm run dev` then `npm run eval` | 17 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
+| Live eval | `npm run dev` then `npm run eval` | 18 turns: the 7 required scenarios plus adversarial ones (pressure to fabricate, prompt injection, impossible ordinals, no results, off-topic), with invariants checked on every turn. Exits non-zero on failure, so it can gate prompt or model changes. Pass a URL to evaluate a deployment: `node scripts/eval.mjs https://…` |
 
 ### Book data sources
 Open Library is the main source. If it refuses a request or can't be reached, searches switch to the Apple Books Search API (no key needed) and the app stops calling Open Library for 60 seconds. When a search only finds nothing, it does not switch. Apple's records are labelled wherever they appear: on the card, in the citation preview and in a note under the answer.
